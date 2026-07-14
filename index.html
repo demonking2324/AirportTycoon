@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Airport Tycoon</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="sky" aria-hidden="true"></div>
+
+    <div class="app">
+      <header class="top-bar">
+        <div class="brand-block">
+          <h1 class="brand">Airport Tycoon</h1>
+          <p class="airport-title" id="airport-title">Vienna · VIE · Austria</p>
+        </div>
+        <div class="stats" role="status" aria-live="polite">
+          <div class="stat">
+            <span class="stat-label">Coins</span>
+            <span class="stat-value" id="coins">500</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Contracts</span>
+            <span class="stat-value" id="contracts">2</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Arrivals</span>
+            <span class="stat-value" id="arrival-level">L1</span>
+          </div>
+        </div>
+      </header>
+
+      <nav class="airport-switcher" id="airport-switcher" aria-label="Unlocked airports"></nav>
+
+      <main class="apron layout-single" id="apron"></main>
+
+      <p class="hint" id="hint">
+        Launch a Level 10 Jumbo to unlock the next airport.
+      </p>
+
+      <footer class="controls">
+        <button type="button" class="btn btn-primary" id="land-btn">
+          Land Contract
+        </button>
+        <button type="button" class="btn btn-launch" id="launch-btn" disabled>
+          Launch Plane
+        </button>
+        <button type="button" class="btn btn-secondary" id="buy-btn">
+          Buy Contract · 80
+        </button>
+        <button type="button" class="btn btn-upgrade" id="upgrade-btn">
+          Contract Upgrade · L2 · 500
+        </button>
+      </footer>
+
+      <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+    </div>
+
+    <script src="airports.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>
