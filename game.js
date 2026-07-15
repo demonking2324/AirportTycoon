@@ -45,8 +45,6 @@
   const logbookBody = document.getElementById("logbook-body");
   const logbookBackBtn = document.getElementById("logbook-back-btn");
 
-  const LOGBOOK_KEY = "airport-tycoon-logbook-v1";
-
   const FLAG_COUNTRY = {
     AT: "Austria",
     DE: "Germany",
@@ -346,22 +344,9 @@
   }
 
   function loadLogbook() {
+    state.logbook = {};
     try {
-      const raw = localStorage.getItem(LOGBOOK_KEY);
-      if (!raw) {
-        state.logbook = {};
-        return;
-      }
-      const data = JSON.parse(raw);
-      state.logbook = data && typeof data === "object" ? data : {};
-    } catch (err) {
-      state.logbook = {};
-    }
-  }
-
-  function persistLogbook() {
-    try {
-      localStorage.setItem(LOGBOOK_KEY, JSON.stringify(state.logbook));
+      localStorage.removeItem("airport-tycoon-logbook-v1");
     } catch (err) {
       // ignore
     }
@@ -381,7 +366,6 @@
     if (!state.logbook[airportId]) state.logbook[airportId] = {};
     if (state.logbook[airportId][airline.id]) return false;
     state.logbook[airportId][airline.id] = true;
-    persistLogbook();
     return true;
   }
 
@@ -452,6 +436,7 @@
   }
 
   function showLogbookPage() {
+    if (logbookBody) logbookBody.innerHTML = "";
     renderLogbook();
     if (gamePage) gamePage.hidden = true;
     if (logbookPage) logbookPage.hidden = false;
