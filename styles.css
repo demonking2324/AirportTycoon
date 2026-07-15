@@ -1002,62 +1002,69 @@ body {
   transform: translateX(-50%) translateY(0);
 }
 
-.save-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: rgba(12, 20, 32, 0.55);
-  backdrop-filter: blur(6px);
+.save-panel {
+  background: linear-gradient(160deg, #3d4654, #2c3340);
+  border: 2px solid rgba(240, 162, 2, 0.45);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 0.9rem 1rem 1rem;
+  color: var(--text);
 }
 
-.save-modal[hidden] {
+.save-panel[hidden] {
   display: none !important;
 }
 
-.save-dialog {
-  width: min(100%, 420px);
-  background: linear-gradient(160deg, #3d4654, #2c3340);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 18px;
-  box-shadow: var(--shadow);
-  padding: 1.1rem 1.1rem 1rem;
-  color: var(--text);
+.save-panel-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
 .save-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 1.8rem;
+  font-size: 1.65rem;
   letter-spacing: 0.04em;
 }
 
 .save-note {
-  margin: 0.35rem 0 0.75rem;
+  margin: 0;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   line-height: 1.35;
+}
+
+.save-label {
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
 }
 
 .save-code {
   width: 100%;
-  min-height: 8rem;
+  min-height: 7.5rem;
   resize: vertical;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 12px;
-  background: rgba(0, 0, 0, 0.28);
+  background: rgba(0, 0, 0, 0.35);
   color: #f2f6fa;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.72rem;
-  line-height: 1.4;
-  padding: 0.7rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  padding: 0.75rem;
   word-break: break-all;
 }
 
+.save-code::placeholder {
+  color: rgba(168, 180, 194, 0.7);
+}
+
 .save-error {
-  margin: 0.55rem 0 0;
+  margin: 0.25rem 0 0;
   color: #ff8f8f;
   font-size: 0.85rem;
   font-weight: 600;
@@ -1067,7 +1074,7 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.55rem;
-  margin-top: 0.75rem;
+  margin-top: 0.45rem;
 }
 
 .save-actions .btn-secondary {

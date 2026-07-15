@@ -1209,9 +1209,10 @@
   launchBtn.addEventListener("click", launchPlane);
 
   const SAVE_STORAGE_KEY = "airport-tycoon-save-v1";
-  const saveModal = document.getElementById("save-modal");
+  const savePanel = document.getElementById("save-panel");
   const saveTitle = document.getElementById("save-title");
   const saveNote = document.getElementById("save-note");
+  const saveLabel = document.getElementById("save-label");
   const saveCodeEl = document.getElementById("save-code");
   const saveErrorEl = document.getElementById("save-error");
   const savePrimaryBtn = document.getElementById("save-primary-btn");
@@ -1219,7 +1220,7 @@
   const exportSaveBtn = document.getElementById("export-save-btn");
   const importSaveBtn = document.getElementById("import-save-btn");
 
-  let saveModalMode = "export";
+  let savePanelMode = "export";
 
   function safeNumber(value, fallback) {
     const n = Number(value);
@@ -1399,23 +1400,21 @@
     saveErrorEl.textContent = message;
   }
 
-  function closeSaveModal() {
-    saveModal.hidden = true;
+  function closeSavePanel() {
+    savePanel.hidden = true;
     saveCodeEl.value = "";
+    saveCodeEl.placeholder = "";
     setSaveError("");
   }
 
   function openExportSave() {
-    if (state.busy) {
-      showToast("Wait for aircraft to finish moving");
-      return;
-    }
-    saveModalMode = "export";
+    savePanelMode = "export";
     saveTitle.textContent = "Save Game Code";
-    saveNote.textContent =
-      "Your code is below. Tap Copy, or select all and copy manually.";
-    savePrimaryBtn.textContent = "Copy";
+    saveNote.textContent = "Copy the code below and keep it somewhere safe.";
+    saveLabel.textContent = "Your save code";
+    savePrimaryBtn.textContent = "Copy Code";
     saveCodeEl.readOnly = true;
+    saveCodeEl.placeholder = "";
     setSaveError("");
     try {
       const code = encodeSave(buildSavePayload());
@@ -1424,9 +1423,10 @@
     } catch (err) {
       showToast("Could not create save code");
       setSaveError(String(err && err.message ? err.message : err));
-      return;
+      saveCodeEl.value = "";
     }
-    saveModal.hidden = false;
+    savePanel.hidden = false;
+    savePanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
     requestAnimationFrame(() => {
       saveCodeEl.focus();
       saveCodeEl.select();
@@ -1434,24 +1434,24 @@
   }
 
   function openImportSave() {
-    if (state.busy) {
-      showToast("Wait for aircraft to finish moving");
-      return;
-    }
-    saveModalMode = "import";
+    savePanelMode = "import";
     saveTitle.textContent = "Load Game Code";
     saveNote.textContent =
-      "Paste a save code, then tap Load. This replaces current progress.";
-    savePrimaryBtn.textContent = "Load";
+      "Paste a save code into the box, then tap Load Code.";
+    saveLabel.textContent = "Paste save code here";
+    savePrimaryBtn.textContent = "Load Code";
     saveCodeEl.readOnly = false;
     saveCodeEl.value = "";
+    saveCodeEl.placeholder = "AT1.pasteYourCodeHere…";
     setSaveError("");
-    saveModal.hidden = false;
+    savePanel.hidden = false;
+    savePanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
     requestAnimationFrame(() => saveCodeEl.focus());
   }
 
   function copySaveCode() {
     const text = saveCodeEl.value;
+    if (!text) return Promise.resolve(false);
     saveCodeEl.focus();
     saveCodeEl.select();
     saveCodeEl.setSelectionRange(0, text.length);
@@ -1478,22 +1478,29 @@
 
   function onSavePrimary() {
     setSaveError("");
-    if (saveModalMode === "export") {
+    if (savePanelMode === "export") {
       copySaveCode().then((ok) => {
         if (ok) showToast("Save code copied");
         else {
           saveCodeEl.select();
           showToast("Select the code and copy it manually");
-          setSaveError("Clipboard blocked — select the code and copy with ⌘C / Ctrl+C.");
+          setSaveError("Select the code above, then press ⌘C / Ctrl+C to copy.");
         }
       });
       return;
     }
 
+    const pasted = String(saveCodeEl.value || "").trim();
+    if (!pasted) {
+      setSaveError("Paste a save code into the box first.");
+      showToast("Paste a save code first");
+      return;
+    }
+
     try {
-      const data = decodeSave(saveCodeEl.value);
+      const data = decodeSave(pasted);
       applySavePayload(data);
-      closeSaveModal();
+      closeSavePanel();
       showToast("Save loaded");
     } catch (err) {
       const message = err && err.message ? err.message : "Invalid save code";
@@ -1503,18 +1510,13 @@
   }
 
   if (savePrimaryBtn) savePrimaryBtn.addEventListener("click", onSavePrimary);
-  if (saveCloseBtn) saveCloseBtn.addEventListener("click", closeSaveModal);
-  if (saveModal) {
-    saveModal.addEventListener("click", (e) => {
-      if (e.target === saveModal) closeSaveModal();
-    });
-  }
+  if (saveCloseBtn) saveCloseBtn.addEventListener("click", closeSavePanel);
   if (exportSaveBtn) exportSaveBtn.addEventListener("click", openExportSave);
   if (importSaveBtn) importSaveBtn.addEventListener("click", openImportSave);
 
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && saveModal && !saveModal.hidden) {
-      closeSaveModal();
+    if (e.key === "Escape" && savePanel && !savePanel.hidden) {
+      closeSavePanel();
     }
   });
 

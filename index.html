@@ -36,7 +36,7 @@
               <span class="stat-value" id="arrival-level">L1</span>
             </div>
           </div>
-          <div class="save-btns">
+      <div class="save-btns">
             <button type="button" class="btn btn-save" id="export-save-btn">
               Save Game Code
             </button>
@@ -46,6 +46,27 @@
           </div>
         </div>
       </header>
+
+      <section class="save-panel" id="save-panel" hidden>
+        <div class="save-panel-inner">
+          <h2 class="save-title" id="save-title">Save Game Code</h2>
+          <p class="save-note" id="save-note"></p>
+          <label class="save-label" id="save-label" for="save-code">Your code</label>
+          <textarea
+            id="save-code"
+            class="save-code"
+            spellcheck="false"
+            autocomplete="off"
+            autocapitalize="off"
+            placeholder=""
+          ></textarea>
+          <p class="save-error" id="save-error" hidden></p>
+          <div class="save-actions">
+            <button type="button" class="btn btn-primary" id="save-primary-btn">Copy</button>
+            <button type="button" class="btn btn-secondary" id="save-close-btn">Close</button>
+          </div>
+        </div>
+      </section>
 
       <nav class="airport-switcher" id="airport-switcher" aria-label="Unlocked airports"></nav>
 
@@ -71,25 +92,6 @@
       </footer>
 
       <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
-    </div>
-
-    <div class="save-modal" id="save-modal" hidden>
-      <div class="save-dialog" role="dialog" aria-modal="true" aria-labelledby="save-title">
-        <h2 class="save-title" id="save-title">Save Code</h2>
-        <p class="save-note" id="save-note"></p>
-        <textarea
-          id="save-code"
-          class="save-code"
-          spellcheck="false"
-          autocomplete="off"
-          autocapitalize="off"
-        ></textarea>
-        <p class="save-error" id="save-error" hidden></p>
-        <div class="save-actions">
-          <button type="button" class="btn btn-primary" id="save-primary-btn">Copy</button>
-          <button type="button" class="btn btn-secondary" id="save-close-btn">Close</button>
-        </div>
-      </div>
     </div>
 
     <script src="airports.js"></script>
