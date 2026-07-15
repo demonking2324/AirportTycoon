@@ -371,8 +371,13 @@
     return Boolean(state.logbook[airportId] && state.logbook[airportId][airlineId]);
   }
 
-  function recordLogbookSighting(airportId, airline) {
+  function recordLogbookSighting(airportId, airline, level = null) {
     if (!airportId || !airline || !airline.id || airline.id === "xx") return false;
+    // Prop (L1) and Trainer (L2) don't count for the Logbook
+    if (level != null) {
+      const lvl = Number(level) || 0;
+      if (lvl > 0 && lvl <= 2) return false;
+    }
     if (!state.logbook[airportId]) state.logbook[airportId] = {};
     if (state.logbook[airportId][airline.id]) return false;
     state.logbook[airportId][airline.id] = true;
@@ -387,11 +392,11 @@
   function renderLogbook() {
     if (!logbookBody) return;
 
-    // Catch any planes already parked (e.g. after merges) so the book stays in sync
+    // Catch parked Twin Prop+ planes so the book stays in sync
     const current = currentAirport();
     state.cells.forEach((entry) => {
       const airline = planeAirline(entry);
-      if (airline) recordLogbookSighting(current.id, airline);
+      if (airline) recordLogbookSighting(current.id, airline, planeLevel(entry));
     });
 
     const sections = AIRPORTS.map((airport, index) => {
@@ -1054,7 +1059,11 @@
     const form = PLANE_FORMS[arrivalLevel];
     const airline = pickAirline(airport, arrivalLevel);
     const arriving = makePlane(arrivalLevel, airline);
-    const spotted = recordLogbookSighting(airport.id, planeAirline(arriving) || airline);
+    const spotted = recordLogbookSighting(
+      airport.id,
+      planeAirline(arriving) || airline,
+      arrivalLevel
+    );
 
     showToast(
       spotted
