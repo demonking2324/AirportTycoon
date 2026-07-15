@@ -381,21 +381,31 @@
   }
 
   function mysteryFlagMarkup() {
-    return `<div class="logbook-flag-unknown" aria-hidden="true">?</div>`;
+    return `<span class="logbook-flag-unknown" aria-hidden="true">???</span>`;
   }
 
   function renderLogbook() {
     if (!logbookBody) return;
+
+    // Catch any planes already parked (e.g. after merges) so the book stays in sync
+    const current = currentAirport();
+    state.cells.forEach((entry) => {
+      const airline = planeAirline(entry);
+      if (airline) recordLogbookSighting(current.id, airline);
+    });
+
     const sections = AIRPORTS.map((airport, index) => {
       const airportOpen = index <= state.unlockedMax;
       const airlines = airport.airlines || [];
-      const seen = airlines.filter((a) => isAirlineLogged(airport.id, a.id)).length;
+      const seenCount = airlines.filter((a) =>
+        isAirlineLogged(airport.id, a.id)
+      ).length;
       const title = airportOpen
         ? `${airport.name} · ${airport.code}`
         : "??? · ???";
       const meta = airportOpen
-        ? `${seen}/${airlines.length} spotted`
-        : "Locked airport";
+        ? `${seenCount} / ${airlines.length} spotted`
+        : "Airport locked";
 
       const rows = airlines
         .map((airline) => {
@@ -406,14 +416,15 @@
                 <div class="logbook-flag">${mysteryFlagMarkup()}</div>
                 <div class="logbook-entry-text">
                   <p class="logbook-entry-name">???</p>
-                  <p class="logbook-entry-country">Country Flag ???</p>
+                  <p class="logbook-entry-country">Country Flag · ???</p>
                 </div>
               </div>`;
           }
-          const country = FLAG_COUNTRY[airline.flag] || airline.flag;
+          const country = FLAG_COUNTRY[airline.flag] || airline.flag || "???";
+          const flag = flagSvg(airline.flag) || mysteryFlagMarkup();
           return `
-            <div class="logbook-entry">
-              <div class="logbook-flag">${flagSvg(airline.flag)}</div>
+            <div class="logbook-entry known">
+              <div class="logbook-flag">${flag}</div>
               <div class="logbook-entry-text">
                 <p class="logbook-entry-name">${airline.name}</p>
                 <p class="logbook-entry-country">${country}</p>
@@ -428,42 +439,48 @@
             <h3 class="logbook-airport-name">${title}</h3>
             <p class="logbook-airport-meta">${meta}</p>
           </div>
-          <div class="logbook-airlines">${rows}</div>
+          <div class="logbook-airlines">${rows || '<p class="logbook-empty">No airlines listed</p>'}</div>
         </section>`;
     }).join("");
 
-    logbookBody.innerHTML = sections;
+    logbookBody.innerHTML = sections || "<p class=\"logbook-empty\">No airports found.</p>";
   }
 
-  function openLogbook() {
+  function showLogbookPage() {
     renderLogbook();
     if (gamePage) gamePage.hidden = true;
     if (logbookPage) logbookPage.hidden = false;
+    document.body.classList.add("on-logbook");
     window.scrollTo(0, 0);
+  }
+
+  function showGamePage() {
+    if (logbookPage) logbookPage.hidden = true;
+    if (gamePage) gamePage.hidden = false;
+    document.body.classList.remove("on-logbook");
+  }
+
+  function openLogbook() {
+    showLogbookPage();
     if (location.hash !== "#logbook") {
       history.pushState({ page: "logbook" }, "", "#logbook");
     }
   }
 
   function closeLogbook() {
+    showGamePage();
     if (location.hash === "#logbook") {
-      history.back();
-      return;
+      history.pushState(
+        { page: "game" },
+        "",
+        `${location.pathname}${location.search}`
+      );
     }
-    if (logbookPage) logbookPage.hidden = true;
-    if (gamePage) gamePage.hidden = false;
   }
 
   function syncPageFromHash() {
-    if (location.hash === "#logbook") {
-      renderLogbook();
-      if (gamePage) gamePage.hidden = true;
-      if (logbookPage) logbookPage.hidden = false;
-      window.scrollTo(0, 0);
-    } else {
-      if (logbookPage) logbookPage.hidden = true;
-      if (gamePage) gamePage.hidden = false;
-    }
+    if (location.hash === "#logbook") showLogbookPage();
+    else showGamePage();
   }
 
   function showToast(message) {
@@ -1037,8 +1054,13 @@
     const form = PLANE_FORMS[arrivalLevel];
     const airline = pickAirline(airport, arrivalLevel);
     const arriving = makePlane(arrivalLevel, airline);
+    const spotted = recordLogbookSighting(airport.id, planeAirline(arriving) || airline);
 
-    showToast(`On final · ${airline.name} ${form.name}`);
+    showToast(
+      spotted
+        ? `On final · new Logbook entry · ${airline.name}`
+        : `On final · ${airline.name} ${form.name}`
+    );
     setRunwayActive(airport.landingRunway, true);
 
     const plane = createFlightPlane(arrivalLevel, airline);
@@ -1094,12 +1116,7 @@
     state.cells[slot] = arriving;
     state.selected = slot;
     state.busy = false;
-    const isNew = recordLogbookSighting(airport.id, airline);
-    showToast(
-      isNew
-        ? `Logbook · ${airline.name} spotted!`
-        : `Parked · ${airline.name} L${arrivalLevel}`
-    );
+    showToast(`Parked · ${airline.name} L${arrivalLevel}`);
     render();
   }
 
@@ -1365,7 +1382,6 @@
   if (logbookBtn) logbookBtn.addEventListener("click", openLogbook);
   if (logbookBackBtn) logbookBackBtn.addEventListener("click", closeLogbook);
   window.addEventListener("popstate", syncPageFromHash);
-  window.addEventListener("hashchange", syncPageFromHash);
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && logbookPage && !logbookPage.hidden) {
       closeLogbook();
