@@ -40,9 +40,10 @@
   const launchBtn = document.getElementById("launch-btn");
   const toastEl = document.getElementById("toast");
   const logbookBtn = document.getElementById("logbook-btn");
-  const logbookModal = document.getElementById("logbook-modal");
+  const gamePage = document.getElementById("game-page");
+  const logbookPage = document.getElementById("logbook-page");
   const logbookBody = document.getElementById("logbook-body");
-  const logbookCloseBtn = document.getElementById("logbook-close-btn");
+  const logbookBackBtn = document.getElementById("logbook-back-btn");
 
   const LOGBOOK_KEY = "airport-tycoon-logbook-v1";
 
@@ -436,11 +437,33 @@
 
   function openLogbook() {
     renderLogbook();
-    logbookModal.hidden = false;
+    if (gamePage) gamePage.hidden = true;
+    if (logbookPage) logbookPage.hidden = false;
+    window.scrollTo(0, 0);
+    if (location.hash !== "#logbook") {
+      history.pushState({ page: "logbook" }, "", "#logbook");
+    }
   }
 
   function closeLogbook() {
-    logbookModal.hidden = true;
+    if (location.hash === "#logbook") {
+      history.back();
+      return;
+    }
+    if (logbookPage) logbookPage.hidden = true;
+    if (gamePage) gamePage.hidden = false;
+  }
+
+  function syncPageFromHash() {
+    if (location.hash === "#logbook") {
+      renderLogbook();
+      if (gamePage) gamePage.hidden = true;
+      if (logbookPage) logbookPage.hidden = false;
+      window.scrollTo(0, 0);
+    } else {
+      if (logbookPage) logbookPage.hidden = true;
+      if (gamePage) gamePage.hidden = false;
+    }
   }
 
   function showToast(message) {
@@ -1340,19 +1363,17 @@
   launchBtn.addEventListener("click", launchPlane);
 
   if (logbookBtn) logbookBtn.addEventListener("click", openLogbook);
-  if (logbookCloseBtn) logbookCloseBtn.addEventListener("click", closeLogbook);
-  if (logbookModal) {
-    logbookModal.addEventListener("click", (e) => {
-      if (e.target === logbookModal) closeLogbook();
-    });
-  }
+  if (logbookBackBtn) logbookBackBtn.addEventListener("click", closeLogbook);
+  window.addEventListener("popstate", syncPageFromHash);
+  window.addEventListener("hashchange", syncPageFromHash);
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && logbookModal && !logbookModal.hidden) {
+    if (e.key === "Escape" && logbookPage && !logbookPage.hidden) {
       closeLogbook();
     }
   });
 
   loadLogbook();
+  syncPageFromHash();
   loadAirportProgress(0);
   buildApron();
   renderAirportSwitcher();

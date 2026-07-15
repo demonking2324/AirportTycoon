@@ -15,7 +15,7 @@
   <body>
     <div class="sky" aria-hidden="true"></div>
 
-    <div class="app">
+    <div class="app page" id="game-page">
       <header class="top-bar">
         <div class="brand-block">
           <h1 class="brand">Airport Tycoon</h1>
@@ -62,24 +62,24 @@
           Logbook
         </button>
       </footer>
-
-      <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
     </div>
 
-    <div class="logbook-modal" id="logbook-modal" hidden>
-      <div class="logbook-dialog" role="dialog" aria-modal="true" aria-labelledby="logbook-title">
-        <div class="logbook-header">
-          <h2 class="logbook-title" id="logbook-title">Logbook</h2>
-          <button type="button" class="logbook-close" id="logbook-close-btn" aria-label="Close logbook">
-            Close
-          </button>
+    <div class="app page logbook-page" id="logbook-page" hidden>
+      <header class="logbook-top">
+        <button type="button" class="btn btn-back" id="logbook-back-btn">
+          ← Back
+        </button>
+        <div class="logbook-heading">
+          <h1 class="logbook-title" id="logbook-title">Logbook</h1>
+          <p class="logbook-note">
+            Airlines stay hidden until they land at your airport.
+          </p>
         </div>
-        <p class="logbook-note">
-          Airlines stay hidden until they land at your airport.
-        </p>
-        <div class="logbook-body" id="logbook-body"></div>
-      </div>
+      </header>
+      <main class="logbook-body" id="logbook-body"></main>
     </div>
+
+    <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
 
     <script src="airports.js"></script>
     <script src="game.js"></script>

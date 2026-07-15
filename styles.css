@@ -977,73 +977,68 @@ body {
   transform: translateX(-50%) translateY(0);
 }
 
-.logbook-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: rgba(12, 20, 32, 0.58);
-  backdrop-filter: blur(6px);
-}
-
-.logbook-modal[hidden] {
+.page[hidden] {
   display: none !important;
 }
 
-.logbook-dialog {
-  width: min(100%, 440px);
-  max-height: min(84vh, 640px);
-  display: flex;
-  flex-direction: column;
-  background: linear-gradient(160deg, #3d4654, #2c3340);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 18px;
-  box-shadow: var(--shadow);
-  padding: 1rem 1rem 0.85rem;
-  color: var(--text);
+.logbook-page {
+  gap: 1rem;
 }
 
-.logbook-header {
+.logbook-top {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.btn-back {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(20, 28, 38, 0.78);
+  color: var(--text);
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  box-shadow: 0 4px 0 rgba(12, 20, 32, 0.28);
+}
+
+.btn-back:hover {
+  transform: translateY(-1px);
+}
+
+.btn-back:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 rgba(12, 20, 32, 0.28);
+}
+
+.logbook-heading {
+  width: 100%;
 }
 
 .logbook-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 1.9rem;
+  font-size: clamp(2.2rem, 8vw, 3rem);
   letter-spacing: 0.04em;
-}
-
-.logbook-close {
-  font-family: var(--font-body);
-  font-size: 0.82rem;
-  font-weight: 700;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.22);
   color: var(--text);
-  padding: 0.4rem 0.75rem;
-  cursor: pointer;
 }
 
 .logbook-note {
-  margin: 0.35rem 0 0.75rem;
-  color: var(--muted);
-  font-size: 0.88rem;
+  margin: 0.25rem 0 0;
+  color: #27405c;
+  font-size: 0.92rem;
+  font-weight: 500;
   line-height: 1.35;
 }
 
 .logbook-body {
-  overflow-y: auto;
-  padding-bottom: 0.35rem;
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+  padding-bottom: 1.5rem;
 }
 
 .logbook-airport {
