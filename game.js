@@ -19,6 +19,7 @@
     airportIndex: 0,
     unlockedMax: 0,
     saves: {},
+    logbook: {},
     cells: [],
     reserved: [],
     selected: null,
@@ -38,6 +39,34 @@
   const upgradeBtn = document.getElementById("upgrade-btn");
   const launchBtn = document.getElementById("launch-btn");
   const toastEl = document.getElementById("toast");
+  const logbookBtn = document.getElementById("logbook-btn");
+  const logbookModal = document.getElementById("logbook-modal");
+  const logbookBody = document.getElementById("logbook-body");
+  const logbookCloseBtn = document.getElementById("logbook-close-btn");
+
+  const LOGBOOK_KEY = "airport-tycoon-logbook-v1";
+
+  const FLAG_COUNTRY = {
+    AT: "Austria",
+    DE: "Germany",
+    CH: "Switzerland",
+    HU: "Hungary",
+    NL: "Netherlands",
+    GB: "United Kingdom",
+    IE: "Ireland",
+    FR: "France",
+    AE: "United Arab Emirates",
+    QA: "Qatar",
+    TR: "Turkey",
+    JP: "Japan",
+    KR: "South Korea",
+    US: "United States",
+    AU: "Australia",
+    NZ: "New Zealand",
+    SG: "Singapore",
+    MY: "Malaysia",
+    ID: "Indonesia",
+  };
 
   let gridEl = null;
   let flightLayer = null;
@@ -313,6 +342,105 @@
     return state.cells
       .map((v, i) => (v === null && !state.reserved[i] && isActiveSlot(i) ? i : -1))
       .filter((i) => i >= 0);
+  }
+
+  function loadLogbook() {
+    try {
+      const raw = localStorage.getItem(LOGBOOK_KEY);
+      if (!raw) {
+        state.logbook = {};
+        return;
+      }
+      const data = JSON.parse(raw);
+      state.logbook = data && typeof data === "object" ? data : {};
+    } catch (err) {
+      state.logbook = {};
+    }
+  }
+
+  function persistLogbook() {
+    try {
+      localStorage.setItem(LOGBOOK_KEY, JSON.stringify(state.logbook));
+    } catch (err) {
+      // ignore
+    }
+  }
+
+  function isAirlineLogged(airportId, airlineId) {
+    return Boolean(state.logbook[airportId] && state.logbook[airportId][airlineId]);
+  }
+
+  function recordLogbookSighting(airportId, airline) {
+    if (!airportId || !airline || !airline.id || airline.id === "xx") return false;
+    if (!state.logbook[airportId]) state.logbook[airportId] = {};
+    if (state.logbook[airportId][airline.id]) return false;
+    state.logbook[airportId][airline.id] = true;
+    persistLogbook();
+    return true;
+  }
+
+  function mysteryFlagMarkup() {
+    return `<div class="logbook-flag-unknown" aria-hidden="true">?</div>`;
+  }
+
+  function renderLogbook() {
+    if (!logbookBody) return;
+    const sections = AIRPORTS.map((airport, index) => {
+      const airportOpen = index <= state.unlockedMax;
+      const airlines = airport.airlines || [];
+      const seen = airlines.filter((a) => isAirlineLogged(airport.id, a.id)).length;
+      const title = airportOpen
+        ? `${airport.name} · ${airport.code}`
+        : "??? · ???";
+      const meta = airportOpen
+        ? `${seen}/${airlines.length} spotted`
+        : "Locked airport";
+
+      const rows = airlines
+        .map((airline) => {
+          const known = airportOpen && isAirlineLogged(airport.id, airline.id);
+          if (!known) {
+            return `
+              <div class="logbook-entry unknown">
+                <div class="logbook-flag">${mysteryFlagMarkup()}</div>
+                <div class="logbook-entry-text">
+                  <p class="logbook-entry-name">???</p>
+                  <p class="logbook-entry-country">Country Flag ???</p>
+                </div>
+              </div>`;
+          }
+          const country = FLAG_COUNTRY[airline.flag] || airline.flag;
+          return `
+            <div class="logbook-entry">
+              <div class="logbook-flag">${flagSvg(airline.flag)}</div>
+              <div class="logbook-entry-text">
+                <p class="logbook-entry-name">${airline.name}</p>
+                <p class="logbook-entry-country">${country}</p>
+              </div>
+            </div>`;
+        })
+        .join("");
+
+      return `
+        <section class="logbook-airport${airportOpen ? "" : " locked"}">
+          <div class="logbook-airport-head">
+            <h3 class="logbook-airport-name">${title}</h3>
+            <p class="logbook-airport-meta">${meta}</p>
+          </div>
+          <div class="logbook-airlines">${rows}</div>
+        </section>`;
+    }).join("");
+
+    logbookBody.innerHTML = sections;
+  }
+
+  function openLogbook() {
+    renderLogbook();
+    logbookModal.hidden = false;
+  }
+
+  function closeLogbook() {
+    logbookModal.hidden = true;
   }
 
   function showToast(message) {
@@ -790,7 +918,7 @@
       hintEl.textContent = "Grid full — merge planes or launch one.";
     } else if (state.arrivalLevel === 1) {
       hintEl.textContent =
-        "Start at Vienna. Each airport has its own progress. Launch a L10 Jumbo to unlock the next — you can always return to completed ones.";
+        "Start at Vienna. Land planes to fill your Logbook · launch an L10 Jumbo to unlock the next airport.";
     } else if (!maxed) {
       const form = PLANE_FORMS[state.arrivalLevel];
       hintEl.textContent = `Arrivals at L${state.arrivalLevel} (${form.name}). Launch a L10 Jumbo to unlock new airports.`;
@@ -943,7 +1071,12 @@
     state.cells[slot] = arriving;
     state.selected = slot;
     state.busy = false;
-    showToast(`Parked · ${airline.name} L${arrivalLevel}`);
+    const isNew = recordLogbookSighting(airport.id, airline);
+    showToast(
+      isNew
+        ? `Logbook · ${airline.name} spotted!`
+        : `Parked · ${airline.name} L${arrivalLevel}`
+    );
     render();
   }
 
@@ -1206,6 +1339,20 @@
   upgradeBtn.addEventListener("click", buyContractUpgrade);
   launchBtn.addEventListener("click", launchPlane);
 
+  if (logbookBtn) logbookBtn.addEventListener("click", openLogbook);
+  if (logbookCloseBtn) logbookCloseBtn.addEventListener("click", closeLogbook);
+  if (logbookModal) {
+    logbookModal.addEventListener("click", (e) => {
+      if (e.target === logbookModal) closeLogbook();
+    });
+  }
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && logbookModal && !logbookModal.hidden) {
+      closeLogbook();
+    }
+  });
+
+  loadLogbook();
   loadAirportProgress(0);
   buildApron();
   renderAirportSwitcher();

@@ -58,9 +58,27 @@
         <button type="button" class="btn btn-upgrade" id="upgrade-btn">
           Contract Upgrade · L2 · 500
         </button>
+        <button type="button" class="btn btn-logbook" id="logbook-btn">
+          Logbook
+        </button>
       </footer>
 
       <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+    </div>
+
+    <div class="logbook-modal" id="logbook-modal" hidden>
+      <div class="logbook-dialog" role="dialog" aria-modal="true" aria-labelledby="logbook-title">
+        <div class="logbook-header">
+          <h2 class="logbook-title" id="logbook-title">Logbook</h2>
+          <button type="button" class="logbook-close" id="logbook-close-btn" aria-label="Close logbook">
+            Close
+          </button>
+        </div>
+        <p class="logbook-note">
+          Airlines stay hidden until they land at your airport.
+        </p>
+        <div class="logbook-body" id="logbook-body"></div>
+      </div>
     </div>
 
     <script src="airports.js"></script>
