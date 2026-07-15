@@ -97,6 +97,7 @@
       cells: cloneCells(state.cells),
       reserved: [...state.reserved],
     };
+    schedulePersist();
   }
 
   function loadAirportProgress(index) {
@@ -790,7 +791,7 @@
       hintEl.textContent = "Grid full — merge planes or launch one.";
     } else if (state.arrivalLevel === 1) {
       hintEl.textContent =
-        "Start at Vienna. Each airport has its own progress. Launch a L10 Jumbo to unlock the next — you can always return to completed ones.";
+        "Each airport has its own progress. Save / Load Game Code is top-right.";
     } else if (!maxed) {
       const form = PLANE_FORMS[state.arrivalLevel];
       hintEl.textContent = `Arrivals at L${state.arrivalLevel} (${form.name}). Launch a L10 Jumbo to unlock new airports.`;
@@ -855,6 +856,7 @@
 
     renderAirportSwitcher();
     updateHud();
+    schedulePersist();
   }
 
   async function landContract() {
@@ -1206,8 +1208,321 @@
   upgradeBtn.addEventListener("click", buyContractUpgrade);
   launchBtn.addEventListener("click", launchPlane);
 
-  loadAirportProgress(0);
-  buildApron();
-  renderAirportSwitcher();
-  render();
+  const SAVE_STORAGE_KEY = "airport-tycoon-save-v1";
+  const saveModal = document.getElementById("save-modal");
+  const saveTitle = document.getElementById("save-title");
+  const saveNote = document.getElementById("save-note");
+  const saveCodeEl = document.getElementById("save-code");
+  const saveErrorEl = document.getElementById("save-error");
+  const savePrimaryBtn = document.getElementById("save-primary-btn");
+  const saveCloseBtn = document.getElementById("save-close-btn");
+  const exportSaveBtn = document.getElementById("export-save-btn");
+  const importSaveBtn = document.getElementById("import-save-btn");
+
+  let saveModalMode = "export";
+
+  function safeNumber(value, fallback) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function encodeSave(payload) {
+    const json = JSON.stringify(payload);
+    const b64 = btoa(json).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+    return `AT1.${b64}`;
+  }
+
+  function decodeSave(code) {
+    let trimmed = String(code || "").trim().replace(/\s+/g, "");
+    let body = trimmed;
+    if (trimmed.startsWith("AT1.")) body = trimmed.slice(4);
+    else if (trimmed.startsWith("AT1-")) body = trimmed.slice(4);
+    else throw new Error("Save code must start with AT1.");
+
+    const padded = body.replace(/-/g, "+").replace(/_/g, "/");
+    const padLen = (4 - (padded.length % 4)) % 4;
+    const b64 = padded + "=".repeat(padLen);
+    let json;
+    try {
+      json = atob(b64);
+    } catch (err) {
+      try {
+        json = decodeURIComponent(escape(atob(body)));
+      } catch (err2) {
+        throw new Error("Save code is corrupted");
+      }
+    }
+    const data = JSON.parse(json);
+    if (!data || Number(data.v) !== 1) throw new Error("Unsupported save version");
+    return data;
+  }
+
+  function packCells(cells) {
+    return (cells || []).map((entry) => {
+      if (!entry) return 0;
+      const level = planeLevel(entry);
+      const airline = planeAirline(entry);
+      return [level, airline ? airline.id : ""];
+    });
+  }
+
+  function unpackCells(packed, airportIndex) {
+    const airport = AIRPORTS[airportIndex];
+    const n = airport.cols * airport.rows;
+    const list = Array.isArray(packed) ? packed : [];
+    const cells = [];
+    for (let i = 0; i < n; i += 1) {
+      const item = list[i];
+      if (item == null || item === 0 || item === "") {
+        cells.push(null);
+        continue;
+      }
+      const level = Array.isArray(item) ? safeNumber(item[0], 1) : safeNumber(item, 1);
+      const airlineId = Array.isArray(item) ? item[1] : null;
+      const def =
+        airlineId &&
+        (airport.airlines || []).find((a) => a.id === airlineId);
+      const airline = def
+        ? { id: def.id, name: def.name, flag: def.flag }
+        : null;
+      cells.push(makePlane(level, airline));
+    }
+    return cells;
+  }
+
+  function buildSavePayload() {
+    state.saves[state.airportIndex] = {
+      coins: state.coins,
+      contracts: state.contracts,
+      arrivalLevel: state.arrivalLevel,
+      cells: cloneCells(state.cells),
+      reserved: [...state.reserved],
+    };
+    const saves = {};
+    Object.keys(state.saves).forEach((key) => {
+      const save = state.saves[key];
+      if (!save) return;
+      saves[String(key)] = {
+        c: safeNumber(save.coins, START_COINS),
+        n: safeNumber(save.contracts, START_CONTRACTS),
+        a: safeNumber(save.arrivalLevel, 1),
+        g: packCells(save.cells),
+        r: (save.reserved || []).map((v) => (v ? 1 : 0)),
+      };
+    });
+    return {
+      v: 1,
+      u: state.unlockedMax,
+      i: state.airportIndex,
+      s: saves,
+    };
+  }
+
+  function applySavePayload(data) {
+    const unlockedMax = Math.max(
+      0,
+      Math.min(safeNumber(data.u, 0), AIRPORTS.length - 1)
+    );
+    let airportIndex = Math.max(0, safeNumber(data.i, 0));
+    airportIndex = Math.min(airportIndex, unlockedMax);
+
+    const saves = {};
+    const rawSaves = data.s || {};
+    Object.keys(rawSaves).forEach((key) => {
+      const idx = Number(key);
+      if (!Number.isFinite(idx) || idx < 0 || idx >= AIRPORTS.length) return;
+      const raw = rawSaves[key] || {};
+      const airport = AIRPORTS[idx];
+      const n = airport.cols * airport.rows;
+      const reservedRaw = Array.isArray(raw.r) ? raw.r : [];
+      saves[idx] = {
+        coins: Math.max(0, safeNumber(raw.c, START_COINS)),
+        contracts: Math.max(0, safeNumber(raw.n, START_CONTRACTS)),
+        arrivalLevel: Math.max(1, Math.min(MAX_LEVEL, safeNumber(raw.a, 1))),
+        cells: unpackCells(raw.g, idx),
+        reserved: Array.from({ length: n }, (_, i) => Boolean(reservedRaw[i])),
+      };
+    });
+
+    if (!saves[airportIndex]) {
+      saves[airportIndex] = defaultSaveFor(airportIndex);
+    }
+
+    state.unlockedMax = unlockedMax;
+    state.saves = saves;
+    state.busy = false;
+    state.selected = null;
+    state.dragFrom = null;
+    loadAirportProgress(airportIndex);
+    buildApron();
+    renderAirportSwitcher();
+    render();
+    persistToLocalStorage();
+  }
+
+  function persistToLocalStorage() {
+    try {
+      const code = encodeSave(buildSavePayload());
+      localStorage.setItem(SAVE_STORAGE_KEY, code);
+    } catch (err) {
+      // ignore quota / private mode
+    }
+  }
+
+  let persistTimer = null;
+  function schedulePersist() {
+    if (persistTimer != null) return;
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      persistToLocalStorage();
+    }, 250);
+  }
+
+  function tryLoadFromLocalStorage() {
+    try {
+      const code = localStorage.getItem(SAVE_STORAGE_KEY);
+      if (!code) return false;
+      applySavePayload(decodeSave(code));
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function setSaveError(message) {
+    if (!message) {
+      saveErrorEl.hidden = true;
+      saveErrorEl.textContent = "";
+      return;
+    }
+    saveErrorEl.hidden = false;
+    saveErrorEl.textContent = message;
+  }
+
+  function closeSaveModal() {
+    saveModal.hidden = true;
+    saveCodeEl.value = "";
+    setSaveError("");
+  }
+
+  function openExportSave() {
+    if (state.busy) {
+      showToast("Wait for aircraft to finish moving");
+      return;
+    }
+    saveModalMode = "export";
+    saveTitle.textContent = "Save Game Code";
+    saveNote.textContent =
+      "Your code is below. Tap Copy, or select all and copy manually.";
+    savePrimaryBtn.textContent = "Copy";
+    saveCodeEl.readOnly = true;
+    setSaveError("");
+    try {
+      const code = encodeSave(buildSavePayload());
+      saveCodeEl.value = code;
+      persistToLocalStorage();
+    } catch (err) {
+      showToast("Could not create save code");
+      setSaveError(String(err && err.message ? err.message : err));
+      return;
+    }
+    saveModal.hidden = false;
+    requestAnimationFrame(() => {
+      saveCodeEl.focus();
+      saveCodeEl.select();
+    });
+  }
+
+  function openImportSave() {
+    if (state.busy) {
+      showToast("Wait for aircraft to finish moving");
+      return;
+    }
+    saveModalMode = "import";
+    saveTitle.textContent = "Load Game Code";
+    saveNote.textContent =
+      "Paste a save code, then tap Load. This replaces current progress.";
+    savePrimaryBtn.textContent = "Load";
+    saveCodeEl.readOnly = false;
+    saveCodeEl.value = "";
+    setSaveError("");
+    saveModal.hidden = false;
+    requestAnimationFrame(() => saveCodeEl.focus());
+  }
+
+  function copySaveCode() {
+    const text = saveCodeEl.value;
+    saveCodeEl.focus();
+    saveCodeEl.select();
+    saveCodeEl.setSelectionRange(0, text.length);
+
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).then(
+        () => true,
+        () => {
+          try {
+            return document.execCommand("copy");
+          } catch (err) {
+            return false;
+          }
+        }
+      );
+    }
+
+    try {
+      return Promise.resolve(document.execCommand("copy"));
+    } catch (err) {
+      return Promise.resolve(false);
+    }
+  }
+
+  function onSavePrimary() {
+    setSaveError("");
+    if (saveModalMode === "export") {
+      copySaveCode().then((ok) => {
+        if (ok) showToast("Save code copied");
+        else {
+          saveCodeEl.select();
+          showToast("Select the code and copy it manually");
+          setSaveError("Clipboard blocked — select the code and copy with ⌘C / Ctrl+C.");
+        }
+      });
+      return;
+    }
+
+    try {
+      const data = decodeSave(saveCodeEl.value);
+      applySavePayload(data);
+      closeSaveModal();
+      showToast("Save loaded");
+    } catch (err) {
+      const message = err && err.message ? err.message : "Invalid save code";
+      setSaveError(message);
+      showToast("Could not load that save code");
+    }
+  }
+
+  if (savePrimaryBtn) savePrimaryBtn.addEventListener("click", onSavePrimary);
+  if (saveCloseBtn) saveCloseBtn.addEventListener("click", closeSaveModal);
+  if (saveModal) {
+    saveModal.addEventListener("click", (e) => {
+      if (e.target === saveModal) closeSaveModal();
+    });
+  }
+  if (exportSaveBtn) exportSaveBtn.addEventListener("click", openExportSave);
+  if (importSaveBtn) importSaveBtn.addEventListener("click", openImportSave);
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && saveModal && !saveModal.hidden) {
+      closeSaveModal();
+    }
+  });
+
+  const restored = tryLoadFromLocalStorage();
+  if (!restored) {
+    loadAirportProgress(0);
+    buildApron();
+    renderAirportSwitcher();
+    render();
+  }
 })();
