@@ -97,7 +97,6 @@
       cells: cloneCells(state.cells),
       reserved: [...state.reserved],
     };
-    schedulePersist();
   }
 
   function loadAirportProgress(index) {
@@ -791,7 +790,7 @@
       hintEl.textContent = "Grid full — merge planes or launch one.";
     } else if (state.arrivalLevel === 1) {
       hintEl.textContent =
-        "Each airport has its own progress. Save / Load Game Code is top-right.";
+        "Each airport has its own progress. Copy a Save Game Code to keep it after refresh.";
     } else if (!maxed) {
       const form = PLANE_FORMS[state.arrivalLevel];
       hintEl.textContent = `Arrivals at L${state.arrivalLevel} (${form.name}). Launch a L10 Jumbo to unlock new airports.`;
@@ -856,7 +855,6 @@
 
     renderAirportSwitcher();
     updateHud();
-    schedulePersist();
   }
 
   async function landContract() {
@@ -1358,36 +1356,6 @@
     buildApron();
     renderAirportSwitcher();
     render();
-    persistToLocalStorage();
-  }
-
-  function persistToLocalStorage() {
-    try {
-      const code = encodeSave(buildSavePayload());
-      localStorage.setItem(SAVE_STORAGE_KEY, code);
-    } catch (err) {
-      // ignore quota / private mode
-    }
-  }
-
-  let persistTimer = null;
-  function schedulePersist() {
-    if (persistTimer != null) return;
-    persistTimer = setTimeout(() => {
-      persistTimer = null;
-      persistToLocalStorage();
-    }, 250);
-  }
-
-  function tryLoadFromLocalStorage() {
-    try {
-      const code = localStorage.getItem(SAVE_STORAGE_KEY);
-      if (!code) return false;
-      applySavePayload(decodeSave(code));
-      return true;
-    } catch (err) {
-      return false;
-    }
   }
 
   function setSaveError(message) {
@@ -1417,9 +1385,7 @@
     saveCodeEl.placeholder = "";
     setSaveError("");
     try {
-      const code = encodeSave(buildSavePayload());
-      saveCodeEl.value = code;
-      persistToLocalStorage();
+      saveCodeEl.value = encodeSave(buildSavePayload());
     } catch (err) {
       showToast("Could not create save code");
       setSaveError(String(err && err.message ? err.message : err));
@@ -1520,11 +1486,15 @@
     }
   });
 
-  const restored = tryLoadFromLocalStorage();
-  if (!restored) {
-    loadAirportProgress(0);
-    buildApron();
-    renderAirportSwitcher();
-    render();
+  // Clear any old autosaves so refresh no longer restores progress
+  try {
+    localStorage.removeItem(SAVE_STORAGE_KEY);
+  } catch (err) {
+    // ignore
   }
+
+  loadAirportProgress(0);
+  buildApron();
+  renderAirportSwitcher();
+  render();
 })();
