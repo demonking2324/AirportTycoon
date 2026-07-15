@@ -343,13 +343,24 @@
       .filter((i) => i >= 0);
   }
 
-  function loadLogbook() {
+  function wipeStoredProgress() {
     state.logbook = {};
     try {
+      const doomed = [];
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (key && key.toLowerCase().includes("airport")) doomed.push(key);
+      }
+      doomed.forEach((key) => localStorage.removeItem(key));
       localStorage.removeItem("airport-tycoon-logbook-v1");
+      localStorage.removeItem("airport-tycoon-save-v1");
     } catch (err) {
       // ignore
     }
+  }
+
+  function loadLogbook() {
+    wipeStoredProgress();
   }
 
   function isAirlineLogged(airportId, airlineId) {
@@ -1388,4 +1399,9 @@
   buildApron();
   renderAirportSwitcher();
   render();
+
+  // Back-forward cache can restore an old in-memory game — force a real reload
+  window.addEventListener("pageshow", (e) => {
+    if (e.persisted) window.location.reload();
+  });
 })();
