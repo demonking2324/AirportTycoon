@@ -62,6 +62,12 @@
   const logbookPage = document.getElementById("logbook-page");
   const logbookBody = document.getElementById("logbook-body");
   const logbookBackBtn = document.getElementById("logbook-back-btn");
+  const potdBtn = document.getElementById("potd-btn");
+  const potdDetail = document.getElementById("potd-detail");
+  const potdPanel = document.getElementById("potd-panel");
+
+  const POTD_KEY = "at-potd-v1";
+  let globalAirlinePool = null;
 
   const FLAG_COUNTRY = {
     AT: "Austria",
@@ -359,6 +365,105 @@
     return state.cells
       .map((v, i) => (v === null && !state.reserved[i] && isActiveSlot(i) ? i : -1))
       .filter((i) => i >= 0);
+  }
+
+  function buildGlobalAirlinePool() {
+    if (globalAirlinePool) return globalAirlinePool;
+    const byId = new Map();
+    AIRPORTS.forEach((airport) => {
+      (airport.airlines || []).forEach((airline) => {
+        if (!byId.has(airline.id)) {
+          byId.set(airline.id, {
+            id: airline.id,
+            name: airline.name,
+            flag: airline.flag,
+          });
+        }
+      });
+    });
+    globalAirlinePool = Array.from(byId.values()).sort((a, b) =>
+      a.id.localeCompare(b.id)
+    );
+    return globalAirlinePool;
+  }
+
+  function utcDateKey() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function hashSeed(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i += 1) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  function mulberry32(seed) {
+    let s = seed >>> 0;
+    return function next() {
+      s = (s + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function getPlaneOfTheDay(dateKey = utcDateKey()) {
+    const pool = buildGlobalAirlinePool();
+    const rng = mulberry32(hashSeed(`AT-POTD-${dateKey}`));
+    const level = 1 + Math.floor(rng() * MAX_LEVEL);
+    const airline = pool[Math.floor(rng() * pool.length)];
+    return {
+      dateKey,
+      level,
+      airline: { id: airline.id, name: airline.name, flag: airline.flag },
+    };
+  }
+
+  function potdLandedToday() {
+    try {
+      return localStorage.getItem(POTD_KEY) === utcDateKey();
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function markPotdLanded() {
+    try {
+      localStorage.setItem(POTD_KEY, utcDateKey());
+    } catch (err) {
+      // ignore
+    }
+  }
+
+  function updatePotdPanel() {
+    if (!potdDetail || !potdBtn) return;
+    const potd = getPlaneOfTheDay();
+    const form = PLANE_FORMS[potd.level];
+    const landed = potdLandedToday();
+    const hasSpace = emptySlots().length > 0;
+
+    potdDetail.innerHTML = landed
+      ? `Today's visitor was <strong>${potd.airline.name}</strong> · L${potd.level} ${form.name}. Come back tomorrow for a new one.`
+      : `Everyone gets the same visitor today: <strong>${potd.airline.name}</strong> · L${potd.level} ${form.name}. Free landing — once per day.`;
+
+    if (potdPanel) potdPanel.classList.toggle("used", landed);
+
+    if (landed) {
+      potdBtn.disabled = true;
+      potdBtn.textContent = "Landed today";
+    } else if (landingLocked()) {
+      potdBtn.disabled = true;
+      potdBtn.textContent = "Land Plane of the Day";
+    } else if (!hasSpace) {
+      potdBtn.disabled = true;
+      potdBtn.textContent = "No parking spots";
+    } else {
+      potdBtn.disabled = false;
+      potdBtn.textContent = "Land Plane of the Day";
+    }
   }
 
   function wipeStoredProgress() {
@@ -985,6 +1090,67 @@
       hintEl.textContent =
         "Arrivals maxed — contracts land as Level 10 Jumbos.";
     }
+
+    updatePotdPanel();
+  }
+
+  async function animateLandingToSlot(slot, level, airline, arriving) {
+    const pad = cellCenterPercent(slot);
+    const path = landingPath();
+    const airport = currentAirport();
+
+    setRunwayActive(airport.landingRunway, true);
+
+    const plane = createFlightPlane(level, airline);
+    placeFlightPlane(plane, path.approach, path.heading, 0.55);
+    plane.style.opacity = "0";
+
+    await flyTo(plane, path.approach, path.touchdown, {
+      duration: 1000,
+      easing: "cubic-bezier(0.25, 0.8, 0.25, 1)",
+      startScale: 0.55,
+      endScale: 1,
+      startRotate: path.heading,
+      endRotate: path.heading,
+      airborne: true,
+      startOpacity: 0,
+      endOpacity: 1,
+    });
+
+    plane.classList.remove("airborne");
+    await sleep(80);
+
+    await flyTo(plane, path.touchdown, path.rollout, {
+      duration: 900,
+      easing: "ease-out",
+      startRotate: path.heading,
+      endRotate: path.heading,
+    });
+
+    showToast("Taxiing to stand…");
+    const exitHeading = headingBetween(path.rollout, path.exit);
+    await flyTo(plane, path.rollout, path.exit, {
+      duration: 280,
+      easing: "ease-in-out",
+      startRotate: path.heading,
+      endRotate: exitHeading,
+    });
+
+    const taxiHeading = headingBetween(path.exit, pad);
+    await flyTo(plane, path.exit, pad, {
+      duration: 700,
+      easing: "ease-in-out",
+      startRotate: taxiHeading,
+      endRotate: taxiHeading,
+    });
+
+    await sleep(60);
+    plane.remove();
+    setRunwayActive(airport.landingRunway, false);
+
+    state.reserved[slot] = false;
+    state.cells[slot] = arriving;
+    if (state.selected === null) state.selected = slot;
   }
 
   function render() {
@@ -1066,8 +1232,6 @@
     state.reserved[slot] = true;
     render();
 
-    const pad = cellCenterPercent(slot);
-    const path = landingPath();
     const airport = currentAirport();
 
     const arrivalLevel = state.arrivalLevel;
@@ -1085,63 +1249,54 @@
         ? `On final · new Logbook entry · ${airline.name}`
         : `On final · ${airline.name} ${form.name}`
     );
-    setRunwayActive(airport.landingRunway, true);
 
-    const plane = createFlightPlane(arrivalLevel, airline);
-    placeFlightPlane(plane, path.approach, path.heading, 0.55);
-    plane.style.opacity = "0";
+    await animateLandingToSlot(slot, arrivalLevel, airline, arriving);
 
-    // Approach + touchdown
-    await flyTo(plane, path.approach, path.touchdown, {
-      duration: 1000,
-      easing: "cubic-bezier(0.25, 0.8, 0.25, 1)",
-      startScale: 0.55,
-      endScale: 1,
-      startRotate: path.heading,
-      endRotate: path.heading,
-      airborne: true,
-      startOpacity: 0,
-      endOpacity: 1,
-    });
-
-    plane.classList.remove("airborne");
-    await sleep(80);
-
-    // Roll out along the landing runway
-    await flyTo(plane, path.touchdown, path.rollout, {
-      duration: 900,
-      easing: "ease-out",
-      startRotate: path.heading,
-      endRotate: path.heading,
-    });
-
-    showToast("Taxiing to stand…");
-    const exitHeading = headingBetween(path.rollout, path.exit);
-    await flyTo(plane, path.rollout, path.exit, {
-      duration: 280,
-      easing: "ease-in-out",
-      startRotate: path.heading,
-      endRotate: exitHeading,
-    });
-
-    const taxiHeading = headingBetween(path.exit, pad);
-    await flyTo(plane, path.exit, pad, {
-      duration: 700,
-      easing: "ease-in-out",
-      startRotate: taxiHeading,
-      endRotate: taxiHeading,
-    });
-
-    await sleep(60);
-    plane.remove();
-    setRunwayActive(airport.landingRunway, false);
-
-    state.reserved[slot] = false;
-    state.cells[slot] = arriving;
-    // Don't steal a selection the player made to launch during this landing.
-    if (state.selected === null) state.selected = slot;
     state.landingBusy = false;
     showToast(`Parked · ${airline.name} L${arrivalLevel}`);
+    render();
+  }
+
+  async function landPlaneOfTheDay() {
+    if (landingLocked()) return;
+    if (potdLandedToday()) {
+      showToast("You already landed today's Plane of the Day");
+      return;
+    }
+
+    const free = emptySlots();
+    if (free.length === 0) {
+      showToast("No empty parking spots");
+      return;
+    }
+
+    const potd = getPlaneOfTheDay();
+    const slot = free[Math.floor(Math.random() * free.length)];
+    const form = PLANE_FORMS[potd.level];
+    const airline = potd.airline;
+    const arriving = makePlane(potd.level, airline);
+
+    state.landingBusy = true;
+    state.reserved[slot] = true;
+    render();
+
+    const spotted = recordLogbookSighting(
+      currentAirport().id,
+      planeAirline(arriving) || airline,
+      potd.level
+    );
+
+    showToast(
+      spotted
+        ? `Plane of the Day · ${airline.name} · new Logbook entry`
+        : `Plane of the Day · ${airline.name} ${form.name}`
+    );
+
+    await animateLandingToSlot(slot, potd.level, airline, arriving);
+
+    markPotdLanded();
+    state.landingBusy = false;
+    showToast(`Plane of the Day parked · ${airline.name} L${potd.level}`);
     render();
   }
 
@@ -1404,6 +1559,7 @@
   buyBtn.addEventListener("click", buyContract);
   upgradeBtn.addEventListener("click", buyContractUpgrade);
   launchBtn.addEventListener("click", launchPlane);
+  if (potdBtn) potdBtn.addEventListener("click", landPlaneOfTheDay);
 
   if (logbookBtn) logbookBtn.addEventListener("click", openLogbook);
   if (logbookBackBtn) logbookBackBtn.addEventListener("click", closeLogbook);

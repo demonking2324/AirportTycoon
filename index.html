@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260716a" />
+    <link rel="stylesheet" href="styles.css?v=20260716b" />
   </head>
   <body>
     <div class="sky" aria-hidden="true"></div>
@@ -38,6 +38,16 @@
       </header>
 
       <nav class="airport-switcher" id="airport-switcher" aria-label="Unlocked airports"></nav>
+
+      <section class="potd" id="potd-panel" aria-labelledby="potd-title">
+        <div class="potd-head">
+          <h2 class="potd-title" id="potd-title">Plane of the Day</h2>
+          <p class="potd-detail" id="potd-detail"></p>
+        </div>
+        <button type="button" class="btn btn-potd" id="potd-btn">
+          Land Plane of the Day
+        </button>
+      </section>
 
       <main class="apron layout-single" id="apron"></main>
 
@@ -81,7 +91,7 @@
 
     <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
 
-    <script src="airports.js?v=20260716a"></script>
-    <script src="game.js?v=20260716a"></script>
+    <script src="airports.js?v=20260716b"></script>
+    <script src="game.js?v=20260716b"></script>
   </body>
 </html>
