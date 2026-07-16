@@ -413,7 +413,10 @@
   function getPlaneOfTheDay(dateKey = utcDateKey()) {
     const pool = buildGlobalAirlinePool();
     const rng = mulberry32(hashSeed(`AT-POTD-${dateKey}`));
-    const level = 1 + Math.floor(rng() * MAX_LEVEL);
+    // Weighted low so the free plane stays a bonus, not a jackpot:
+    // L1-L2 common, L3 uncommon, L4 rare. Never higher.
+    const roll = rng();
+    const level = roll < 0.4 ? 1 : roll < 0.75 ? 2 : roll < 0.93 ? 3 : 4;
     const airline = pool[Math.floor(rng() * pool.length)];
     return {
       dateKey,
