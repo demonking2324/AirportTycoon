@@ -24,8 +24,26 @@
     reserved: [],
     selected: null,
     dragFrom: null,
-    busy: false,
+    landingBusy: false,
+    takeoffBusy: false,
   };
+
+  // A landing and a takeoff can run at once, unless the airport shares one runway.
+  function anyBusy() {
+    return state.landingBusy || state.takeoffBusy;
+  }
+
+  function runwaysShared(airport = currentAirport()) {
+    return !airport || airport.landingRunway === airport.takeoffRunway;
+  }
+
+  function landingLocked() {
+    return state.landingBusy || (runwaysShared() && state.takeoffBusy);
+  }
+
+  function takeoffLocked() {
+    return state.takeoffBusy || (runwaysShared() && state.landingBusy);
+  }
 
   const coinsEl = document.getElementById("coins");
   const contractsEl = document.getElementById("contracts");
@@ -235,7 +253,7 @@
       btn.className = "airport-chip";
       if (index === state.airportIndex) btn.classList.add("active");
       const unlocked = index <= state.unlockedMax;
-      btn.disabled = !unlocked || state.busy;
+      btn.disabled = !unlocked || anyBusy();
       btn.textContent = unlocked ? `${airport.code}` : "???";
       btn.title = unlocked
         ? index < state.unlockedMax
@@ -251,7 +269,7 @@
   }
 
   function switchAirport(index) {
-    if (state.busy || index > state.unlockedMax || index === state.airportIndex) {
+    if (anyBusy() || index > state.unlockedMax || index === state.airportIndex) {
       return;
     }
     saveCurrentAirport();
@@ -926,9 +944,9 @@
     arrivalLevelEl.textContent = `L${state.arrivalLevel}`;
 
     const canLand =
-      !state.busy && state.contracts > 0 && emptySlots().length > 0;
+      !landingLocked() && state.contracts > 0 && emptySlots().length > 0;
     const canLaunch =
-      !state.busy &&
+      !takeoffLocked() &&
       state.selected !== null &&
       state.cells[state.selected] !== null;
     const nextArrival = state.arrivalLevel + 1;
@@ -937,11 +955,11 @@
 
     landBtn.disabled = !canLand;
     launchBtn.disabled = !canLaunch;
-    buyBtn.disabled = state.busy || state.coins < CONTRACT_COST;
+    buyBtn.disabled = anyBusy() || state.coins < CONTRACT_COST;
     buyBtn.textContent = `Buy Contract · ${CONTRACT_COST}`;
 
     upgradeBtn.disabled =
-      state.busy || maxed || state.coins < upgradeCost;
+      anyBusy() || maxed || state.coins < upgradeCost;
     upgradeBtn.classList.toggle("owned", maxed);
     if (maxed) {
       upgradeBtn.textContent = "Arrivals Maxed · L10";
@@ -949,7 +967,7 @@
       upgradeBtn.textContent = `Contract Upgrade · L${nextArrival} · ${upgradeCost.toLocaleString("en-US")}`;
     }
 
-    if (state.busy) {
+    if (anyBusy()) {
       hintEl.textContent = "Aircraft moving on the field…";
     } else if (state.contracts <= 0 && emptySlots().length === 0) {
       hintEl.textContent = "Buy a contract or launch a plane for coins.";
@@ -999,7 +1017,7 @@
         const plane = document.createElement("button");
         plane.type = "button";
         plane.className = `plane lvl-${level}`;
-        plane.draggable = !state.busy;
+        plane.draggable = !anyBusy();
         plane.dataset.index = String(i);
         const airlineLabel = airline ? `, ${airline.name}` : "";
         plane.setAttribute("aria-label", `Level ${level} plane${airlineLabel}`);
@@ -1007,13 +1025,15 @@
 
         plane.innerHTML = planeMarkup(level, airline);
 
-        if (!state.busy) {
+        // Selecting is always allowed (e.g. to launch while another plane lands);
+        // dragging to move/merge stays locked while anything is on the move.
+        plane.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onPlaneClick(i);
+        });
+        if (!anyBusy()) {
           plane.addEventListener("dragstart", onDragStart);
           plane.addEventListener("dragend", onDragEnd);
-          plane.addEventListener("click", (e) => {
-            e.stopPropagation();
-            onPlaneClick(i);
-          });
         }
 
         cell.appendChild(plane);
@@ -1027,7 +1047,7 @@
   }
 
   async function landContract() {
-    if (state.busy) return;
+    if (landingLocked()) return;
     if (state.contracts <= 0) {
       showToast("No contracts left");
       return;
@@ -1041,10 +1061,9 @@
 
     const slot = free[Math.floor(Math.random() * free.length)];
 
-    state.busy = true;
+    state.landingBusy = true;
     state.contracts -= 1;
     state.reserved[slot] = true;
-    state.selected = null;
     render();
 
     const pad = cellCenterPercent(slot);
@@ -1119,14 +1138,15 @@
 
     state.reserved[slot] = false;
     state.cells[slot] = arriving;
-    state.selected = slot;
-    state.busy = false;
+    // Don't steal a selection the player made to launch during this landing.
+    if (state.selected === null) state.selected = slot;
+    state.landingBusy = false;
     showToast(`Parked · ${airline.name} L${arrivalLevel}`);
     render();
   }
 
   async function launchPlane() {
-    if (state.busy) return;
+    if (takeoffLocked()) return;
     if (state.selected === null) {
       showToast("Select a plane to launch");
       return;
@@ -1143,7 +1163,7 @@
     const path = takeoffPath();
     const airport = currentAirport();
 
-    state.busy = true;
+    state.takeoffBusy = true;
     state.cells[index] = null;
     state.selected = null;
     render();
@@ -1200,7 +1220,7 @@
     setRunwayActive(airport.takeoffRunway, false);
 
     state.coins += payout;
-    state.busy = false;
+    state.takeoffBusy = false;
 
     let unlockMsg = "";
     if (level >= MAX_LEVEL && state.unlockedMax < AIRPORTS.length - 1) {
@@ -1215,7 +1235,7 @@
   }
 
   function buyContract() {
-    if (state.busy) return;
+    if (anyBusy()) return;
     if (state.coins < CONTRACT_COST) {
       showToast("Not enough coins");
       return;
@@ -1227,7 +1247,7 @@
   }
 
   function buyContractUpgrade() {
-    if (state.busy) return;
+    if (anyBusy()) return;
     if (state.arrivalLevel >= MAX_LEVEL) {
       showToast("Arrivals already maxed");
       return;
@@ -1248,7 +1268,7 @@
   }
 
   function tryMerge(from, to) {
-    if (state.busy) return false;
+    if (anyBusy()) return false;
     if (from === to) return false;
     const a = state.cells[from];
     const b = state.cells[to];
@@ -1285,7 +1305,7 @@
   }
 
   function tryMove(from, to) {
-    if (state.busy) return false;
+    if (anyBusy()) return false;
     if (from === to) return false;
     if (state.cells[to] !== null) return tryMerge(from, to);
     state.cells[to] = state.cells[from];
@@ -1296,8 +1316,9 @@
   }
 
   function onPlaneClick(index) {
-    if (state.busy) return;
-    if (state.selected !== null && state.selected !== index) {
+    // Merging requires an idle field, but selecting (e.g. to launch while
+    // another plane is landing) is always allowed.
+    if (!anyBusy() && state.selected !== null && state.selected !== index) {
       const from = state.selected;
       const a = state.cells[from];
       const b = state.cells[index];
@@ -1311,14 +1332,14 @@
   }
 
   function onCellClick(index) {
-    if (state.busy || !isActiveSlot(index)) return;
+    if (anyBusy() || !isActiveSlot(index)) return;
     if (state.cells[index] !== null) return;
     if (state.selected === null) return;
     tryMove(state.selected, index);
   }
 
   function onDragStart(e) {
-    if (state.busy) {
+    if (anyBusy()) {
       e.preventDefault();
       return;
     }
@@ -1338,7 +1359,7 @@
   }
 
   function onDragOver(e) {
-    if (state.busy) return;
+    if (anyBusy()) return;
     e.preventDefault();
     const cell = e.currentTarget;
     const to = Number(cell.dataset.index);
@@ -1363,7 +1384,7 @@
   }
 
   function onDrop(e) {
-    if (state.busy) return;
+    if (anyBusy()) return;
     e.preventDefault();
     clearDropHints();
     const to = Number(e.currentTarget.dataset.index);
