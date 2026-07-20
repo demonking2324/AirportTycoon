@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260716c" />
+    <link rel="stylesheet" href="styles.css?v=20260720a" />
   </head>
   <body>
     <div class="sky" aria-hidden="true"></div>
@@ -71,7 +71,30 @@
         <button type="button" class="btn btn-logbook" id="logbook-btn">
           Logbook
         </button>
+        <button type="button" class="btn btn-runway" id="runway-btn" hidden>
+          Extra Runway · 25,000
+        </button>
       </footer>
+    </div>
+
+    <div class="runway-modal" id="runway-modal" hidden>
+      <div class="runway-dialog" role="dialog" aria-modal="true" aria-labelledby="runway-title">
+        <h2 class="runway-title" id="runway-title">Build Extra Runway</h2>
+        <p class="runway-note">
+          25,000 coins · pick a dedicated strip so arrivals and departures no longer share the same runway.
+        </p>
+        <div class="runway-choices">
+          <button type="button" class="btn btn-runway-pick btn-runway-land" id="runway-landing-btn">
+            Arrivals runway
+          </button>
+          <button type="button" class="btn btn-runway-pick btn-runway-depart" id="runway-takeoff-btn">
+            Departures runway
+          </button>
+        </div>
+        <button type="button" class="btn btn-secondary runway-cancel" id="runway-close-btn">
+          Cancel
+        </button>
+      </div>
     </div>
 
     <div class="app page logbook-page" id="logbook-page" hidden>
@@ -91,7 +114,7 @@
 
     <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
 
-    <script src="airports.js?v=20260716c"></script>
-    <script src="game.js?v=20260716c"></script>
+    <script src="airports.js?v=20260720a"></script>
+    <script src="game.js?v=20260720a"></script>
   </body>
 </html>

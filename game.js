@@ -2,6 +2,7 @@
   const AIRPORTS = window.AIRPORTS;
   const MAX_LEVEL = 10;
   const CONTRACT_COST = 80;
+  const EXTRA_RUNWAY_COST = 25000;
   const CONTRACT_UPGRADE_COST = [
     0, 0, 500, 1500, 4500, 12000, 30000, 75000, 180000, 450000, 1000000,
   ];
@@ -65,6 +66,11 @@
   const potdBtn = document.getElementById("potd-btn");
   const potdDetail = document.getElementById("potd-detail");
   const potdPanel = document.getElementById("potd-panel");
+  const runwayBtn = document.getElementById("runway-btn");
+  const runwayModal = document.getElementById("runway-modal");
+  const runwayLandingBtn = document.getElementById("runway-landing-btn");
+  const runwayTakeoffBtn = document.getElementById("runway-takeoff-btn");
+  const runwayCloseBtn = document.getElementById("runway-close-btn");
 
   const POTD_KEY = "at-potd-v1";
   let globalAirlinePool = null;
@@ -95,8 +101,83 @@
   let flightLayer = null;
   let toastTimer = null;
 
+  function baseAirport(index = state.airportIndex) {
+    return AIRPORTS[index];
+  }
+
+  function getSaveExtraRunway(airportIndex = state.airportIndex) {
+    const save = state.saves[airportIndex];
+    return save && save.extraRunway ? save.extraRunway : null;
+  }
+
+  function canOfferExtraRunway(airportIndex = state.airportIndex) {
+    const base = baseAirport(airportIndex);
+    if (getSaveExtraRunway(airportIndex)) return false;
+    return base.landingRunway === base.takeoffRunway;
+  }
+
+  function applyExtraRunway(base, extraRole) {
+    const main = base.runways[0];
+    const vertical = Boolean(main.vertical);
+    if (extraRole === "landing") {
+      return {
+        ...base,
+        layout: "dual",
+        landingRunway: "extra-landing",
+        takeoffRunway: "main",
+        runways: [
+          {
+            id: "extra-landing",
+            start: main.start,
+            end: main.end,
+            badge: "Arrivals",
+            role: "landing",
+            vertical,
+          },
+          {
+            ...main,
+            id: "main",
+            badge: "Departures",
+            role: "takeoff",
+            vertical,
+          },
+        ],
+      };
+    }
+    return {
+      ...base,
+      layout: "dual",
+      landingRunway: "main",
+      takeoffRunway: "extra-takeoff",
+      runways: [
+        {
+          ...main,
+          id: "main",
+          badge: "Arrivals",
+          role: "landing",
+          vertical,
+        },
+        {
+          id: "extra-takeoff",
+          start: main.end,
+          end: main.start,
+          badge: "Departures",
+          role: "takeoff",
+          vertical,
+        },
+      ],
+    };
+  }
+
+  function effectiveAirport(airportIndex = state.airportIndex) {
+    const base = baseAirport(airportIndex);
+    const extra = getSaveExtraRunway(airportIndex);
+    if (!extra) return base;
+    return applyExtraRunway(base, extra);
+  }
+
   function currentAirport() {
-    return AIRPORTS[state.airportIndex];
+    return effectiveAirport(state.airportIndex);
   }
 
   function slotCount(airport = currentAirport()) {
@@ -138,16 +219,19 @@
       arrivalLevel: 1,
       cells: Array(n).fill(null),
       reserved: Array(n).fill(false),
+      extraRunway: null,
     };
   }
 
   function saveCurrentAirport() {
+    const prev = state.saves[state.airportIndex] || {};
     state.saves[state.airportIndex] = {
       coins: state.coins,
       contracts: state.contracts,
       arrivalLevel: state.arrivalLevel,
       cells: cloneCells(state.cells),
       reserved: [...state.reserved],
+      extraRunway: prev.extraRunway || null,
     };
   }
 
@@ -1095,6 +1179,60 @@
     }
 
     updatePotdPanel();
+    updateRunwayButton();
+  }
+
+  function updateRunwayButton() {
+    if (!runwayBtn) return;
+    const extra = getSaveExtraRunway();
+    const offer = canOfferExtraRunway();
+    runwayBtn.hidden = !offer && !extra;
+    if (extra) {
+      runwayBtn.disabled = true;
+      runwayBtn.textContent =
+        extra === "landing"
+          ? "Extra arrivals runway built"
+          : "Extra departures runway built";
+      return;
+    }
+    if (!offer) return;
+    runwayBtn.disabled = anyBusy() || state.coins < EXTRA_RUNWAY_COST;
+    runwayBtn.textContent = `Extra Runway · ${EXTRA_RUNWAY_COST.toLocaleString("en-US")}`;
+  }
+
+  function openRunwayModal() {
+    if (!canOfferExtraRunway()) return;
+    if (state.coins < EXTRA_RUNWAY_COST) {
+      showToast("Not enough coins");
+      return;
+    }
+    if (anyBusy()) return;
+    if (runwayModal) runwayModal.hidden = false;
+  }
+
+  function closeRunwayModal() {
+    if (runwayModal) runwayModal.hidden = true;
+  }
+
+  function buyExtraRunway(role) {
+    if (role !== "landing" && role !== "takeoff") return;
+    if (!canOfferExtraRunway()) return;
+    if (anyBusy()) return;
+    if (state.coins < EXTRA_RUNWAY_COST) {
+      showToast("Not enough coins");
+      return;
+    }
+
+    state.coins -= EXTRA_RUNWAY_COST;
+    if (!state.saves[state.airportIndex]) {
+      state.saves[state.airportIndex] = defaultSaveFor(state.airportIndex);
+    }
+    state.saves[state.airportIndex].extraRunway = role;
+    closeRunwayModal();
+    buildApron();
+    render();
+    const label = role === "landing" ? "Arrivals" : "Departures";
+    showToast(`Extra ${label} runway built · land and launch together now`);
   }
 
   async function animateLandingToSlot(slot, level, airline, arriving) {
@@ -1563,11 +1701,28 @@
   upgradeBtn.addEventListener("click", buyContractUpgrade);
   launchBtn.addEventListener("click", launchPlane);
   if (potdBtn) potdBtn.addEventListener("click", landPlaneOfTheDay);
+  if (runwayBtn) runwayBtn.addEventListener("click", openRunwayModal);
+  if (runwayLandingBtn) {
+    runwayLandingBtn.addEventListener("click", () => buyExtraRunway("landing"));
+  }
+  if (runwayTakeoffBtn) {
+    runwayTakeoffBtn.addEventListener("click", () => buyExtraRunway("takeoff"));
+  }
+  if (runwayCloseBtn) runwayCloseBtn.addEventListener("click", closeRunwayModal);
+  if (runwayModal) {
+    runwayModal.addEventListener("click", (e) => {
+      if (e.target === runwayModal) closeRunwayModal();
+    });
+  }
 
   if (logbookBtn) logbookBtn.addEventListener("click", openLogbook);
   if (logbookBackBtn) logbookBackBtn.addEventListener("click", closeLogbook);
   window.addEventListener("popstate", syncPageFromHash);
   window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && runwayModal && !runwayModal.hidden) {
+      closeRunwayModal();
+      return;
+    }
     if (e.key === "Escape" && logbookPage && !logbookPage.hidden) {
       closeLogbook();
     }
