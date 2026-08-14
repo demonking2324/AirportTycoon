@@ -107,13 +107,21 @@
 
   function getSaveExtraRunway(airportIndex = state.airportIndex) {
     const save = state.saves[airportIndex];
-    return save && save.extraRunway ? save.extraRunway : null;
+    const role = save && save.extraRunway;
+    return role === "landing" || role === "takeoff" ? role : null;
+  }
+
+  function baseAirportHasSharedRunway(base) {
+    return Boolean(
+      base &&
+        (base.layout === "single" || base.layout === "side") &&
+        base.landingRunway === base.takeoffRunway
+    );
   }
 
   function canOfferExtraRunway(airportIndex = state.airportIndex) {
-    const base = baseAirport(airportIndex);
     if (getSaveExtraRunway(airportIndex)) return false;
-    return base.landingRunway === base.takeoffRunway;
+    return baseAirportHasSharedRunway(baseAirport(airportIndex));
   }
 
   function applyExtraRunway(base, extraRole) {
@@ -225,13 +233,16 @@
 
   function saveCurrentAirport() {
     const prev = state.saves[state.airportIndex] || {};
+    const prevExtra = prev.extraRunway;
+    const extraRunway =
+      prevExtra === "landing" || prevExtra === "takeoff" ? prevExtra : null;
     state.saves[state.airportIndex] = {
       coins: state.coins,
       contracts: state.contracts,
       arrivalLevel: state.arrivalLevel,
       cells: cloneCells(state.cells),
       reserved: [...state.reserved],
-      extraRunway: prev.extraRunway || null,
+      extraRunway,
     };
   }
 
@@ -1180,33 +1191,38 @@
 
     updatePotdPanel();
     updateRunwayButton();
+    if (runwayModal && !runwayModal.hidden) updateRunwayModal();
   }
 
   function updateRunwayButton() {
     if (!runwayBtn) return;
-    const extra = getSaveExtraRunway();
     const offer = canOfferExtraRunway();
-    runwayBtn.hidden = !offer && !extra;
-    if (extra) {
-      runwayBtn.disabled = true;
-      runwayBtn.textContent =
-        extra === "landing"
-          ? "Extra arrivals runway built"
-          : "Extra departures runway built";
-      return;
-    }
+    runwayBtn.hidden = !offer;
     if (!offer) return;
     runwayBtn.disabled = anyBusy() || state.coins < EXTRA_RUNWAY_COST;
     runwayBtn.textContent = `Extra Runway · ${EXTRA_RUNWAY_COST.toLocaleString("en-US")}`;
   }
 
+  function updateRunwayModal() {
+    const offer = canOfferExtraRunway();
+    const canBuy =
+      offer && !anyBusy() && state.coins >= EXTRA_RUNWAY_COST;
+    if (runwayLandingBtn) runwayLandingBtn.disabled = !canBuy;
+    if (runwayTakeoffBtn) runwayTakeoffBtn.disabled = !canBuy;
+  }
+
   function openRunwayModal() {
+    if (getSaveExtraRunway()) {
+      showToast("Extra runway already built at this airport");
+      return;
+    }
     if (!canOfferExtraRunway()) return;
     if (state.coins < EXTRA_RUNWAY_COST) {
       showToast("Not enough coins");
       return;
     }
     if (anyBusy()) return;
+    updateRunwayModal();
     if (runwayModal) runwayModal.hidden = false;
   }
 
@@ -1216,6 +1232,11 @@
 
   function buyExtraRunway(role) {
     if (role !== "landing" && role !== "takeoff") return;
+    if (getSaveExtraRunway()) {
+      showToast("Extra runway already built at this airport");
+      closeRunwayModal();
+      return;
+    }
     if (!canOfferExtraRunway()) return;
     if (anyBusy()) return;
     if (state.coins < EXTRA_RUNWAY_COST) {
@@ -1224,10 +1245,9 @@
     }
 
     state.coins -= EXTRA_RUNWAY_COST;
-    if (!state.saves[state.airportIndex]) {
-      state.saves[state.airportIndex] = defaultSaveFor(state.airportIndex);
-    }
+    saveCurrentAirport();
     state.saves[state.airportIndex].extraRunway = role;
+    saveCurrentAirport();
     closeRunwayModal();
     buildApron();
     render();
@@ -1718,6 +1738,38 @@
   if (logbookBtn) logbookBtn.addEventListener("click", openLogbook);
   if (logbookBackBtn) logbookBackBtn.addEventListener("click", closeLogbook);
   window.addEventListener("popstate", syncPageFromHash);
+
+  const MONEY_CHEAT = "money please";
+  // Secret bonus: type this code to have a free Level 10 Jumbo delivered.
+  const BONUS_CODE = "cleared for takeoff";
+  const CODE_MAX = Math.max(MONEY_CHEAT.length, BONUS_CODE.length);
+  let codeBuffer = "";
+
+  function grantSecretBonus() {
+    if (anyBusy()) {
+      showToast("Secret bonus · wait for the field to clear, then retype");
+      return;
+    }
+    const free = emptySlots();
+    if (free.length === 0) {
+      state.coins += TAKEOFF_PAYOUT[MAX_LEVEL];
+      showToast(
+        `Secret bonus · grid full · +${TAKEOFF_PAYOUT[MAX_LEVEL].toLocaleString("en-US")} coins`
+      );
+      render();
+      return;
+    }
+    const slot = free[Math.floor(Math.random() * free.length)];
+    const airport = currentAirport();
+    const airline = pickAirline(airport, MAX_LEVEL);
+    const jumbo = makePlane(MAX_LEVEL, airline);
+    state.cells[slot] = jumbo;
+    state.selected = slot;
+    recordLogbookSighting(airport.id, planeAirline(jumbo) || airline, MAX_LEVEL);
+    showToast("Secret bonus · free Level 10 Jumbo delivered — launch it!");
+    render();
+  }
+
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && runwayModal && !runwayModal.hidden) {
       closeRunwayModal();
@@ -1725,6 +1777,24 @@
     }
     if (e.key === "Escape" && logbookPage && !logbookPage.hidden) {
       closeLogbook();
+      return;
+    }
+
+    // Secret codes: type "Money Please" for coins, or the hidden bonus code.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key.length === 1) {
+      codeBuffer = (codeBuffer + e.key.toLowerCase()).slice(-CODE_MAX);
+      if (codeBuffer.endsWith(MONEY_CHEAT)) {
+        codeBuffer = "";
+        state.coins += 100000;
+        showToast("Money please · +100,000 coins");
+        render();
+      } else if (codeBuffer.endsWith(BONUS_CODE)) {
+        codeBuffer = "";
+        grantSecretBonus();
+      }
+    } else if (e.key === "Backspace") {
+      codeBuffer = codeBuffer.slice(0, -1);
     }
   });
 
