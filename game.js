@@ -414,6 +414,18 @@
 
     html += `<div class="flight-layer" id="flight-layer" aria-hidden="true"></div>`;
     apronEl.innerHTML = html;
+
+    const extraY =
+      (landingRw.vertical ? 0 : extras.landing) +
+      (takeoffRw.vertical ? 0 : extras.takeoff);
+    const extraX =
+      (landingRw.vertical ? extras.landing : 0) +
+      (takeoffRw.vertical ? extras.takeoff : 0);
+    apronEl.style.setProperty("--extra-y", String(extraY));
+    apronEl.style.setProperty("--extra-x", String(extraX));
+    if (extraY > 0) apronEl.classList.add("grow-y");
+    if (extraX > 0) apronEl.classList.add("grow-x");
+
     gridEl = document.getElementById("grid");
     flightLayer = document.getElementById("flight-layer");
     gridEl.style.gridTemplateColumns = `repeat(${airport.cols}, 1fr)`;
