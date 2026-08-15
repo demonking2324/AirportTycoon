@@ -585,14 +585,10 @@
   function getPlaneOfTheDay(dateKey = utcDateKey()) {
     const pool = buildGlobalAirlinePool();
     const rng = mulberry32(hashSeed(`AT-POTD-${dateKey}`));
-    // Weighted low so the free plane stays a bonus, not a jackpot:
-    // L1-L2 common, L3 uncommon, L4 rare. Never higher.
-    const roll = rng();
-    const level = roll < 0.4 ? 1 : roll < 0.75 ? 2 : roll < 0.93 ? 3 : 4;
     const airline = pool[Math.floor(rng() * pool.length)];
     return {
       dateKey,
-      level,
+      level: 5,
       airline: { id: airline.id, name: airline.name, flag: airline.flag },
     };
   }
@@ -873,16 +869,6 @@
     return { id: pool[0].id, name: pool[0].name, flag: pool[0].flag };
   }
 
-  function airlineFitsLevel(airline, level, airport = currentAirport()) {
-    if (!airline) return false;
-    const lvl = Number(level) || 1;
-    const def = (airport.airlines || []).find((item) => item.id === airline.id);
-    if (!def) return false;
-    const min = Number(def.minLevel ?? 1);
-    const max = Number(def.maxLevel ?? MAX_LEVEL);
-    return lvl >= min && lvl <= max;
-  }
-
   function planeLevel(entry) {
     return entry && typeof entry === "object" ? entry.level : entry;
   }
@@ -891,10 +877,16 @@
     return entry && typeof entry === "object" ? entry.airline : null;
   }
 
+  function keepCarrier(airline) {
+    return Boolean(airline && airline.id && airline.id !== "xx" && airline.name);
+  }
+
   function makePlane(level, airline = null) {
     const lvl = Number(level) || 1;
-    const carrier = airlineFitsLevel(airline, lvl)
-      ? airline
+    // Keep the given livery even if that airline isn't based here.
+    // Plane of the Day visitors were being rewritten to a local carrier.
+    const carrier = keepCarrier(airline)
+      ? { id: airline.id, name: airline.name, flag: airline.flag }
       : pickAirline(currentAirport(), lvl);
     return {
       level: lvl,
