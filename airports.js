@@ -164,11 +164,10 @@ window.AIRPORTS = [
     layout: "side",
     cols: 3,
     rows: 3,
-    mask: [true, true, false, true, true, false, true, true, true],
     landingRunway: "main",
     takeoffRunway: "main",
     runways: [
-      { id: "main", start: "16", end: "34", badge: "RWY 16/34", role: "shared", vertical: true },
+      { id: "main", start: "16", end: "34", badge: "16/34", role: "shared", vertical: true },
     ],
     airlines: [
       { id: "jl", name: "Japan Airlines", flag: "JP", weight: 40, minLevel: 1, maxLevel: 10 },

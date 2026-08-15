@@ -25,25 +25,46 @@
     reserved: [],
     selected: null,
     dragFrom: null,
-    landingBusy: false,
-    takeoffBusy: false,
+    // Lane-based concurrency: each in-use runway lane id maps to true.
+    // Multiple landings and takeoffs run at once, one per free lane.
+    busyLanes: {},
   };
 
-  // A landing and a takeoff can run at once, unless the airport shares one runway.
+  // Any aircraft currently moving on a runway lane.
   function anyBusy() {
-    return state.landingBusy || state.takeoffBusy;
+    return Object.keys(state.busyLanes).length > 0;
   }
 
-  function runwaysShared(airport = currentAirport()) {
-    return !airport || airport.landingRunway === airport.takeoffRunway;
+  function laneBusy(id) {
+    return Boolean(state.busyLanes[id]);
+  }
+
+  function claimLane(id) {
+    if (!id) return;
+    state.busyLanes[id] = true;
+  }
+
+  function releaseLane(id) {
+    if (!id) return;
+    delete state.busyLanes[id];
+  }
+
+  function freeLandingLane() {
+    const lanes = currentLaneConfig().arrivals;
+    return lanes.find((lane) => !laneBusy(lane.id)) || null;
+  }
+
+  function freeTakeoffLane() {
+    const lanes = currentLaneConfig().departures;
+    return lanes.find((lane) => !laneBusy(lane.id)) || null;
   }
 
   function landingLocked() {
-    return state.landingBusy || (runwaysShared() && state.takeoffBusy);
+    return !freeLandingLane();
   }
 
   function takeoffLocked() {
-    return state.takeoffBusy || (runwaysShared() && state.landingBusy);
+    return !freeTakeoffLane();
   }
 
   const coinsEl = document.getElementById("coins");
@@ -105,87 +126,76 @@
     return AIRPORTS[index];
   }
 
-  function getSaveExtraRunway(airportIndex = state.airportIndex) {
-    const save = state.saves[airportIndex];
-    const role = save && save.extraRunway;
-    return role === "landing" || role === "takeoff" ? role : null;
+  function extraCounts(airportIndex = state.airportIndex) {
+    const save = state.saves[airportIndex] || {};
+    let landing = Math.max(0, Number(save.extraLanding) || 0);
+    let takeoff = Math.max(0, Number(save.extraTakeoff) || 0);
+    if (save.extraRunway === "landing") landing = Math.max(landing, 1);
+    if (save.extraRunway === "takeoff") takeoff = Math.max(takeoff, 1);
+    return { landing, takeoff };
   }
 
-  function baseAirportHasSharedRunway(base) {
-    return Boolean(
-      base &&
-        (base.layout === "single" || base.layout === "side") &&
-        base.landingRunway === base.takeoffRunway
-    );
-  }
-
-  function canOfferExtraRunway(airportIndex = state.airportIndex) {
-    if (getSaveExtraRunway(airportIndex)) return false;
-    return baseAirportHasSharedRunway(baseAirport(airportIndex));
-  }
-
-  function applyExtraRunway(base, extraRole) {
-    const main = base.runways[0];
-    const vertical = Boolean(main.vertical);
-    if (extraRole === "landing") {
-      return {
-        ...base,
-        layout: "dual",
-        landingRunway: "extra-landing",
-        takeoffRunway: "main",
-        runways: [
-          {
-            id: "extra-landing",
-            start: main.start,
-            end: main.end,
-            badge: "Arrivals",
-            role: "landing",
-            vertical,
-          },
-          {
-            ...main,
-            id: "main",
-            badge: "Departures",
-            role: "takeoff",
-            vertical,
-          },
-        ],
-      };
+  function currentLaneConfig(airportIndex = state.airportIndex) {
+    const base = baseAirport(airportIndex);
+    const extras = extraCounts(airportIndex);
+    const shared = base.landingRunway === base.takeoffRunway;
+    const arrivals = [];
+    const departures = [];
+    if (shared) {
+      arrivals.push({ id: base.landingRunway, shared: true });
+      departures.push({ id: base.takeoffRunway, shared: true });
+    } else {
+      arrivals.push({ id: base.landingRunway, shared: false });
+      departures.push({ id: base.takeoffRunway, shared: false });
     }
+    for (let i = 1; i <= extras.landing; i += 1) {
+      arrivals.push({ id: `extra-landing-${i}`, shared: false });
+    }
+    for (let i = 1; i <= extras.takeoff; i += 1) {
+      departures.push({ id: `extra-takeoff-${i}`, shared: false });
+    }
+    return { arrivals, departures };
+  }
+
+  function extraBadge(role, index, originalDedicated, vertical) {
+    const n = (originalDedicated ? 1 : 0) + index;
+    if (vertical) {
+      const short = role === "landing" ? "ARR" : "DEP";
+      return n <= 1 ? short : `${short} ${n}`;
+    }
+    const label = role === "landing" ? "Arrivals" : "Departures";
+    return n <= 1 ? label : `${label} ${n}`;
+  }
+
+  function extraRunwayDef(id, template, role, badge) {
     return {
-      ...base,
-      layout: "dual",
-      landingRunway: "main",
-      takeoffRunway: "extra-takeoff",
-      runways: [
-        {
-          ...main,
-          id: "main",
-          badge: "Arrivals",
-          role: "landing",
-          vertical,
-        },
-        {
-          id: "extra-takeoff",
-          start: main.end,
-          end: main.start,
-          badge: "Departures",
-          role: "takeoff",
-          vertical,
-        },
-      ],
+      id,
+      start: template.start,
+      end: template.end,
+      badge,
+      role,
+      vertical: Boolean(template.vertical),
     };
   }
 
-  function effectiveAirport(airportIndex = state.airportIndex) {
-    const base = baseAirport(airportIndex);
-    const extra = getSaveExtraRunway(airportIndex);
-    if (!extra) return base;
-    return applyExtraRunway(base, extra);
+  function extraStrips(template, role, count, originalDedicated) {
+    const list = [];
+    const vertical = Boolean(template.vertical);
+    for (let i = 1; i <= count; i += 1) {
+      list.push(
+        extraRunwayDef(
+          role === "landing" ? `extra-landing-${i}` : `extra-takeoff-${i}`,
+          template,
+          role,
+          extraBadge(role, i, originalDedicated, vertical)
+        )
+      );
+    }
+    return list;
   }
 
   function currentAirport() {
-    return effectiveAirport(state.airportIndex);
+    return baseAirport(state.airportIndex);
   }
 
   function slotCount(airport = currentAirport()) {
@@ -227,22 +237,22 @@
       arrivalLevel: 1,
       cells: Array(n).fill(null),
       reserved: Array(n).fill(false),
-      extraRunway: null,
+      extraLanding: 0,
+      extraTakeoff: 0,
     };
   }
 
   function saveCurrentAirport() {
     const prev = state.saves[state.airportIndex] || {};
-    const prevExtra = prev.extraRunway;
-    const extraRunway =
-      prevExtra === "landing" || prevExtra === "takeoff" ? prevExtra : null;
+    const extras = extraCounts(state.airportIndex);
     state.saves[state.airportIndex] = {
       coins: state.coins,
       contracts: state.contracts,
       arrivalLevel: state.arrivalLevel,
       cells: cloneCells(state.cells),
       reserved: [...state.reserved],
-      extraRunway,
+      extraLanding: extras.landing,
+      extraTakeoff: extras.takeoff,
     };
   }
 
@@ -311,6 +321,20 @@
     `;
   }
 
+  function runwayGroupMarkup(runways, stack, groupRole) {
+    if (!runways.length) return "";
+    if (runways.length === 1) return runwayMarkup(runways[0]);
+    const roleClass =
+      groupRole === "landing"
+        ? "runway-group-landing"
+        : groupRole === "takeoff"
+          ? "runway-group-takeoff"
+          : "runway-group-shared";
+    return `<div class="runway-group stack-${stack} ${roleClass}" style="--lanes:${runways.length}">${runways
+      .map((rw) => runwayMarkup(rw))
+      .join("")}</div>`;
+  }
+
   function buildApron() {
     const airport = currentAirport();
     applyTheme(airport);
@@ -327,15 +351,65 @@
       </div>
     `;
 
+    const extras = extraCounts();
+    const landingRw =
+      airport.runways.find((rw) => rw.id === airport.landingRunway) ||
+      airport.runways[0];
+    const takeoffRw =
+      airport.runways.find((rw) => rw.id === airport.takeoffRunway) ||
+      airport.runways[0];
+    const shared = airport.landingRunway === airport.takeoffRunway;
+    const landingStack = landingRw.vertical ? "x" : "y";
+    const takeoffStack = takeoffRw.vertical ? "x" : "y";
+    const landingExtras = extraStrips(
+      landingRw,
+      "landing",
+      extras.landing,
+      !shared
+    );
+    const takeoffExtras = extraStrips(
+      takeoffRw,
+      "takeoff",
+      extras.takeoff,
+      !shared
+    );
+
     let html = "";
-    if (airport.layout === "single") {
-      html = `${terminal}${runwayMarkup(airport.runways[0])}`;
-    } else if (airport.layout === "side") {
-      html = `${runwayMarkup(airport.runways[0])}${terminal}`;
-    } else if (airport.layout === "cross") {
-      html = `${runwayMarkup(airport.runways[0])}${terminal}${runwayMarkup(airport.runways[1])}`;
+    if (shared && airport.layout === "side") {
+      // Haneda-style: extra arrivals stay with the original strip;
+      // extra departures go on the opposite side so the apron isn't crushed.
+      const leftHtml = runwayGroupMarkup(
+        [...landingExtras, landingRw],
+        landingStack,
+        extras.landing ? "landing" : "shared"
+      );
+      const rightHtml = takeoffExtras.length
+        ? runwayGroupMarkup(takeoffExtras, takeoffStack, "takeoff")
+        : "";
+      html = `${leftHtml}${terminal}${rightHtml}`;
+      if (rightHtml) apronEl.classList.add("split-runways");
+    } else if (shared) {
+      const groupHtml = runwayGroupMarkup(
+        [...landingExtras, landingRw, ...takeoffExtras],
+        landingStack,
+        "shared"
+      );
+      html =
+        airport.layout === "side"
+          ? `${groupHtml}${terminal}`
+          : `${terminal}${groupHtml}`;
     } else {
-      html = `${runwayMarkup(airport.runways[0])}${terminal}${runwayMarkup(airport.runways[1])}`;
+      const landHtml = runwayGroupMarkup(
+        [...landingExtras, landingRw],
+        landingStack,
+        "landing"
+      );
+      const takeHtml = runwayGroupMarkup(
+        [takeoffRw, ...takeoffExtras],
+        takeoffStack,
+        "takeoff"
+      );
+      html = `${landHtml}${terminal}${takeHtml}`;
     }
 
     html += `<div class="flight-layer" id="flight-layer" aria-hidden="true"></div>`;
@@ -410,15 +484,16 @@
     return { x: xPercent, y: yPercent };
   }
 
-  function landingPath() {
+  function landingPath(runwayId) {
     const airport = currentAirport();
-    const band = runwayBand(airport.landingRunway);
+    const band = runwayBand(runwayId || airport.landingRunway);
     if (band.vertical) {
+      const towardGridX = band.x < 50 ? band.right + 3 : band.left - 3;
       return {
         approach: pointOnApron(band.x, -18),
         touchdown: pointOnApron(band.x, 18),
         rollout: pointOnApron(band.x, 78),
-        exit: pointOnApron(band.right + 3, 78),
+        exit: pointOnApron(towardGridX, 78),
         heading: 180,
       };
     }
@@ -433,15 +508,17 @@
     };
   }
 
-  function takeoffPath() {
+  function takeoffPath(runwayId) {
     const airport = currentAirport();
-    const band = runwayBand(airport.takeoffRunway);
+    const band = runwayBand(runwayId || airport.takeoffRunway);
     if (band.vertical) {
+      const fromGridX = band.x < 50 ? band.right + 3 : band.left - 3;
+      const climbX = band.x < 50 ? band.x - 8 : band.x + 8;
       return {
-        hold: pointOnApron(band.left - 3, 78),
+        hold: pointOnApron(fromGridX, 78),
         lineup: pointOnApron(band.x, 78),
         rotate: pointOnApron(band.x, 22),
-        climb: pointOnApron(band.x - 8, -18),
+        climb: pointOnApron(climbX, -18),
         heading: 0,
       };
     }
@@ -752,9 +829,8 @@
   }
 
   function setRunwayActive(id, active) {
-    document.querySelectorAll(".runway").forEach((el) => {
-      el.classList.toggle("active", active && el.dataset.runway === id);
-    });
+    const el = document.querySelector(`.runway[data-runway="${id}"]`);
+    if (el) el.classList.toggle("active", active);
   }
 
   const PLANE_FORMS = [
@@ -1196,27 +1272,25 @@
 
   function updateRunwayButton() {
     if (!runwayBtn) return;
-    const offer = canOfferExtraRunway();
-    runwayBtn.hidden = !offer;
-    if (!offer) return;
+    runwayBtn.hidden = false;
     runwayBtn.disabled = anyBusy() || state.coins < EXTRA_RUNWAY_COST;
     runwayBtn.textContent = `Extra Runway · ${EXTRA_RUNWAY_COST.toLocaleString("en-US")}`;
   }
 
   function updateRunwayModal() {
-    const offer = canOfferExtraRunway();
-    const canBuy =
-      offer && !anyBusy() && state.coins >= EXTRA_RUNWAY_COST;
+    const extras = extraCounts();
+    const note = document.querySelector(".runway-note");
+    if (note) {
+      const arrivalWord = extras.landing === 1 ? "arrival" : "arrivals";
+      const departWord = extras.takeoff === 1 ? "departure" : "departures";
+      note.textContent = `25,000 coins · add another arrivals or departures strip. This airport has ${extras.landing} extra ${arrivalWord} and ${extras.takeoff} extra ${departWord}.`;
+    }
+    const canBuy = !anyBusy() && state.coins >= EXTRA_RUNWAY_COST;
     if (runwayLandingBtn) runwayLandingBtn.disabled = !canBuy;
     if (runwayTakeoffBtn) runwayTakeoffBtn.disabled = !canBuy;
   }
 
   function openRunwayModal() {
-    if (getSaveExtraRunway()) {
-      showToast("Extra runway already built at this airport");
-      return;
-    }
-    if (!canOfferExtraRunway()) return;
     if (state.coins < EXTRA_RUNWAY_COST) {
       showToast("Not enough coins");
       return;
@@ -1232,12 +1306,6 @@
 
   function buyExtraRunway(role) {
     if (role !== "landing" && role !== "takeoff") return;
-    if (getSaveExtraRunway()) {
-      showToast("Extra runway already built at this airport");
-      closeRunwayModal();
-      return;
-    }
-    if (!canOfferExtraRunway()) return;
     if (anyBusy()) return;
     if (state.coins < EXTRA_RUNWAY_COST) {
       showToast("Not enough coins");
@@ -1246,21 +1314,30 @@
 
     state.coins -= EXTRA_RUNWAY_COST;
     saveCurrentAirport();
-    state.saves[state.airportIndex].extraRunway = role;
-    saveCurrentAirport();
+    const save = state.saves[state.airportIndex];
+    if (role === "landing") {
+      save.extraLanding = (Number(save.extraLanding) || 0) + 1;
+    } else {
+      save.extraTakeoff = (Number(save.extraTakeoff) || 0) + 1;
+    }
     closeRunwayModal();
     buildApron();
     render();
     const label = role === "landing" ? "Arrivals" : "Departures";
-    showToast(`Extra ${label} runway built · land and launch together now`);
+    const lanes = currentLaneConfig();
+    const n = role === "landing" ? lanes.arrivals.length : lanes.departures.length;
+    showToast(
+      `Extra ${label} runway built · ${n} ${label.toLowerCase()} ${n === 1 ? "lane" : "lanes"}`
+    );
   }
 
-  async function animateLandingToSlot(slot, level, airline, arriving) {
+  async function animateLandingToSlot(slot, level, airline, arriving, runwayId) {
     const pad = cellCenterPercent(slot);
-    const path = landingPath();
+    const path = landingPath(runwayId);
     const airport = currentAirport();
+    const laneId = runwayId || airport.landingRunway;
 
-    setRunwayActive(airport.landingRunway, true);
+    setRunwayActive(laneId, true);
 
     const plane = createFlightPlane(level, airline);
     placeFlightPlane(plane, path.approach, path.heading, 0.55);
@@ -1307,7 +1384,7 @@
 
     await sleep(60);
     plane.remove();
-    setRunwayActive(airport.landingRunway, false);
+    setRunwayActive(laneId, false);
 
     state.reserved[slot] = false;
     state.cells[slot] = arriving;
@@ -1374,7 +1451,8 @@
   }
 
   async function landContract() {
-    if (landingLocked()) return;
+    const lane = freeLandingLane();
+    if (!lane) return;
     if (state.contracts <= 0) {
       showToast("No contracts left");
       return;
@@ -1388,7 +1466,7 @@
 
     const slot = free[Math.floor(Math.random() * free.length)];
 
-    state.landingBusy = true;
+    claimLane(lane.id);
     state.contracts -= 1;
     state.reserved[slot] = true;
     render();
@@ -1411,15 +1489,19 @@
         : `On final · ${airline.name} ${form.name}`
     );
 
-    await animateLandingToSlot(slot, arrivalLevel, airline, arriving);
+    try {
+      await animateLandingToSlot(slot, arrivalLevel, airline, arriving, lane.id);
+    } finally {
+      releaseLane(lane.id);
+    }
 
-    state.landingBusy = false;
     showToast(`Parked · ${airline.name} L${arrivalLevel}`);
     render();
   }
 
   async function landPlaneOfTheDay() {
-    if (landingLocked()) return;
+    const lane = freeLandingLane();
+    if (!lane) return;
     if (potdLandedToday()) {
       showToast("You already landed today's Plane of the Day");
       return;
@@ -1437,7 +1519,7 @@
     const airline = potd.airline;
     const arriving = makePlane(potd.level, airline);
 
-    state.landingBusy = true;
+    claimLane(lane.id);
     state.reserved[slot] = true;
     render();
 
@@ -1453,16 +1535,20 @@
         : `Plane of the Day · ${airline.name} ${form.name}`
     );
 
-    await animateLandingToSlot(slot, potd.level, airline, arriving);
+    try {
+      await animateLandingToSlot(slot, potd.level, airline, arriving, lane.id);
+      markPotdLanded();
+    } finally {
+      releaseLane(lane.id);
+    }
 
-    markPotdLanded();
-    state.landingBusy = false;
     showToast(`Plane of the Day parked · ${airline.name} L${potd.level}`);
     render();
   }
 
   async function launchPlane() {
-    if (takeoffLocked()) return;
+    const lane = freeTakeoffLane();
+    if (!lane) return;
     if (state.selected === null) {
       showToast("Select a plane to launch");
       return;
@@ -1476,67 +1562,68 @@
 
     const payout = TAKEOFF_PAYOUT[level];
     const pad = cellCenterPercent(index);
-    const path = takeoffPath();
-    const airport = currentAirport();
+    const path = takeoffPath(lane.id);
 
-    state.takeoffBusy = true;
+    claimLane(lane.id);
     state.cells[index] = null;
     state.selected = null;
     render();
     showToast("Taxiing to runway…");
-    setRunwayActive(airport.takeoffRunway, true);
+    setRunwayActive(lane.id, true);
 
     const plane = createFlightPlane(level, airline);
     const toHold = headingBetween(pad, path.hold);
     placeFlightPlane(plane, pad, toHold, 1);
 
-    await flyTo(plane, pad, path.hold, {
-      duration: 650,
-      easing: "ease-in-out",
-      startRotate: toHold,
-      endRotate: path.heading,
-    });
+    try {
+      await flyTo(plane, pad, path.hold, {
+        duration: 650,
+        easing: "ease-in-out",
+        startRotate: toHold,
+        endRotate: path.heading,
+      });
 
-    await flyTo(plane, path.hold, path.lineup, {
-      duration: 320,
-      easing: "ease-in-out",
-      startRotate: path.heading,
-      endRotate: path.heading,
-    });
+      await flyTo(plane, path.hold, path.lineup, {
+        duration: 320,
+        easing: "ease-in-out",
+        startRotate: path.heading,
+        endRotate: path.heading,
+      });
 
-    await sleep(100);
-    showToast("Rolling…");
+      await sleep(100);
+      showToast("Rolling…");
 
-    // Accelerate down the takeoff runway
-    await flyTo(plane, path.lineup, path.rotate, {
-      duration: 850,
-      easing: "cubic-bezier(0.4, 0, 0.7, 1)",
-      startScale: 1,
-      endScale: 1,
-      startRotate: path.heading,
-      endRotate: path.heading,
-    });
+      // Accelerate down the takeoff runway
+      await flyTo(plane, path.lineup, path.rotate, {
+        duration: 850,
+        easing: "cubic-bezier(0.4, 0, 0.7, 1)",
+        startScale: 1,
+        endScale: 1,
+        startRotate: path.heading,
+        endRotate: path.heading,
+      });
 
-    showToast("Airborne…");
-    plane.classList.add("airborne");
+      showToast("Airborne…");
+      plane.classList.add("airborne");
 
-    await flyTo(plane, path.rotate, path.climb, {
-      duration: 900,
-      easing: "cubic-bezier(0.35, 0.05, 0.55, 1)",
-      startScale: 1,
-      endScale: 0.4,
-      startRotate: path.heading,
-      endRotate: path.heading - 8,
-      airborne: true,
-      startOpacity: 1,
-      endOpacity: 0,
-    });
-
-    plane.remove();
-    setRunwayActive(airport.takeoffRunway, false);
+      await flyTo(plane, path.rotate, path.climb, {
+        duration: 900,
+        easing: "cubic-bezier(0.35, 0.05, 0.55, 1)",
+        startScale: 1,
+        endScale: 0.4,
+        startRotate: path.heading,
+        endRotate: path.heading - 8,
+        airborne: true,
+        startOpacity: 1,
+        endOpacity: 0,
+      });
+    } finally {
+      plane.remove();
+      setRunwayActive(lane.id, false);
+      releaseLane(lane.id);
+    }
 
     state.coins += payout;
-    state.takeoffBusy = false;
 
     let unlockMsg = "";
     if (level >= MAX_LEVEL && state.unlockedMax < AIRPORTS.length - 1) {
